@@ -26,3 +26,4 @@ from .likelihood import (
     LikelihoodPlanckPowerSpectra,
 )
 from .mcmc import build_computation_chain, run_mcmc
+from .prior import PriorFunction, PriorGaussianKDE
