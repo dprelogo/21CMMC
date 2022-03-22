@@ -52,10 +52,15 @@ class PriorFunction(PriorBase):
 
     def __init__(self, arg_names, f=None):
         super().__init__()
-        if self is not None:
-            self.computePrior = f
-
         self.arg_names = arg_names
+        self.f = f
+
+    def computePrior(self, arg_values):
+        """Calling the prior function."""
+        if self.f is None:
+            raise NotImplementedError("The Base prior should never be used directly!")
+        else:
+            return self.f(arg_values)
 
     def reduce_data(self, ctx):
         """Extracting argument values from the context."""
