@@ -3,6 +3,7 @@ import logging
 import numpy as np
 from cached_property import cached_property
 from io import IOBase
+from multiprocessing.sharedctypes import Value
 from os import path, rename
 from powerbox.tools import get_power
 from py21cmfast import wrapper as lib
@@ -666,6 +667,109 @@ class Likelihood1DPowerLightcone(Likelihood1DPowerCoeval):
             power, k = self.compute_power(
                 brightness_temp.brightness_temp[:, :, start:end],
                 (self.user_params.BOX_LEN, self.user_params.BOX_LEN, chunklen),
+                self.n_psbins,
+                log_bins=self.logk,
+                ignore_kperp_zero=self.ignore_kperp_zero,
+                ignore_kpar_zero=self.ignore_kpar_zero,
+                ignore_k_zero=self.ignore_k_zero,
+            )
+            data.append({"k": k, "delta": power * k ** 3 / (2 * np.pi ** 2)})
+
+        return data
+
+    def store(self, model, storage):
+        """Store the model into backend storage."""
+        # add the power to the written data
+        for i, m in enumerate(model):
+            storage.update({k + "_%s" % i: v for k, v in m.items()})
+
+
+class Likelihood1DPowerObservedLightcone(Likelihood1DPowerLightcone):
+    """A likelihood very similar to :class:`Likelihood1DPowerLightcone`, except it uses an "observed" lightcone.
+
+    Additionally, it provides functionality to smooth the lightcone with
+    a box-car kernel before calculating the powerspetrum, and calculate the horizon wedge excision.
+    For other parameters, see :class:`Likelihood1DPowerCoeval` and :class:`Likelihood1DPowerLightcone`.
+
+    Parameters
+    ----------
+    smoothing_kernel_size : int, optional
+        Smoothing size, in number of voxels. If set, smooths the lightcone with
+        `(smoothing_kernel_size) * 3` kernel before powerspectrum calculation.
+        Defaults to 1, i.e. no smoothing.
+    horizon_wedge_excision : bool, optional
+        Either to delete the modes below the wedge or not.
+    """
+
+    required_cores = (core.CoreObservedLightCone,)
+
+    def __init__(
+        self, *args, smoothing_kernel_size=1, horizon_wedge_excision=False, **kwargs
+    ):
+        super().__init__(*args, **kwargs)
+        if not self._simulate:
+            raise ValueError(
+                "It is necessary to simulate the mock for the likelihood computation."
+            )
+        if smoothing_kernel_size < 1 or type(smoothing_kernel_size) is not int:
+            raise ValueError("Smoothing size should be a positive integer.")
+        self.kernel_size = smoothing_kernel_size
+        if horizon_wedge_excision:
+            raise NotImplementedError(
+                "At the moment horizon excision is not implemented"
+            )
+
+    @staticmethod
+    def boxcar3D_smoothing(data, kernel):
+        """Simple implementation of 3D boxcar smoothing."""
+        Sx, Sy, Sz = data.shape
+        Nx, Ny, Nz = kernel
+
+        return (
+            np.einsum(
+                "ijklmn->ikm",
+                data[: Sx // Nx * Nx, : Sy // Ny * Ny, : Sz // Nz * Nz].reshape(
+                    (Sx // Nx, Nx, Sy // Ny, Ny, Sz // Nz, Nz)
+                ),
+            )
+            / (Nx * Ny * Nz)
+        )
+
+    def reduce_data(self, ctx):
+        """Reduce the data in the context to a list of models (one for each redshift chunk)."""
+        lightcone = ctx.get("lightcone")
+        observed_brightness_temp = ctx.get("observed_brightness_temp")
+        if self.kernel_size > 1:
+            observed_brightness_temp = self.boxcar3D_smoothing(
+                observed_brightness_temp, (self.kernel_size,) * 3
+            )
+
+        data = []
+        chunk_indices = list(
+            range(
+                0,
+                lightcone.n_slices // self.kernel_size,
+                lightcone.n_slices // self.kernel_size // self.nchunks,
+            )
+        )
+
+        if len(chunk_indices) > self.nchunks:
+            chunk_indices = chunk_indices[:-1]
+
+        chunk_indices.append(lightcone.n_slices // self.kernel_size)
+
+        for i in range(self.nchunks):
+            start = chunk_indices[i]
+            end = chunk_indices[i + 1]
+            chunklen = (end - start) * lightcone.cell_size * self.kernel_size
+
+            power, k = self.compute_power(
+                observed_brightness_temp[:, :, start:end],
+                (
+                    self.user_params.BOX_LEN * self.kernel_size,
+                    self.user_params.BOX_LEN * self.kernel_size,
+                    chunklen,
+                ),
                 self.n_psbins,
                 log_bins=self.logk,
                 ignore_kperp_zero=self.ignore_kperp_zero,

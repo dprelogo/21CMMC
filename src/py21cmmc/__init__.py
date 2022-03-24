@@ -8,6 +8,7 @@ from .core import (
     CoreForest,
     CoreLightConeModule,
     CoreLuminosityFunction,
+    CoreObservedLightCone,
     NotAChain,
     NotSetupError,
 )
@@ -15,6 +16,7 @@ from .cosmoHammer import HDFStorageUtil
 from .likelihood import (
     Likelihood1DPowerCoeval,
     Likelihood1DPowerLightcone,
+    Likelihood1DPowerObservedLightcone,
     LikelihoodBaseFile,
     LikelihoodEDGES,
     LikelihoodForest,
