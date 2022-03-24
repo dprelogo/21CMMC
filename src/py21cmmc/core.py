@@ -1148,3 +1148,89 @@ class CoreCMB(CoreBase):
                 cl[key] *= T * 1.0e6
         print("GET_CL")
         return cl
+
+
+class CoreObservedLightCone(CoreLightConeModule):
+    """Core module for evaluating lightcone simulations and "observing" the brightness temperature with a telescope.
+
+    Here we implement a very simple pipeline in which UV gridding is fixed (and equivalent) to
+    the Fourier transform of the lightcone. Beam is also simplified as a delta function.
+
+    Parameters
+    ----------
+    uv_filepath : str, optional
+        Filepath from which the UV box will be loaded. If `None`, it is pre-computed.
+    sigma_filepath : str, optional
+        Filepath from which and array of telescope noise amplitudes for each redshift will be loaded.
+        If `None`, it is pre-computed.
+    """
+
+    # TODO: write pre-computation of uv box and sigma
+    def __init__(self, *args, uv_filepath=None, sigma_filepath=None, **kwargs):
+        if uv_filepath is None or sigma_filepath is None:
+            raise NotImplementedError(
+                "At the moment, the code requires UV box and noise amplitude."
+            )
+        super().__init__(*args, **kwargs)
+
+        self.uv = np.load(uv_filepath)  # gridded uv measurements
+        self.uv_mask = self.uv < 1e-12  # contains all non-measured parts of uv grid
+        self.sigma = np.load(sigma_filepath)  # noise amplitudes
+
+    def build_model_data(self, ctx):
+        """Compute all data defined by this core and add it to the context."""
+        if ctx.contains("lightcone") and hasattr(
+            ctx.get("lightcone"), "brightness_temp"
+        ):
+            lightcone = ctx.get("lightcone")
+        else:
+            logger.info(
+                "Computing the lightcone, saving only the brightness temperature box. "
+                "Prepend this core with CoreLightConeModule if other boxes are needed."
+            )
+
+            # Update parameters
+            astro_params, cosmo_params = self._update_params(ctx.getParams())
+            lightcone_quantities = ("brightness_temp",)
+
+            # Call C-code
+            lightcone = p21.run_lightcone(
+                redshift=self.redshift[0],
+                max_redshift=self.max_redshift,
+                astro_params=astro_params,
+                flag_options=self.flag_options,
+                cosmo_params=cosmo_params,
+                user_params=self.user_params,
+                regenerate=False,
+                random_seed=self.initial_conditions_seed,
+                write=self.io_options["cache_mcmc"],
+                direc=self.io_options["cache_dir"],
+                lightcone_quantities=lightcone_quantities,
+                global_quantities=lightcone_quantities,
+                **self.global_params,
+            )
+            ctx.add("lightcone", lightcone)
+
+        observed_brightness_temp = self.observe_lightcone(lightcone.brightness_temp)
+        ctx.add("observed_brightness_temp", observed_brightness_temp)
+
+    def observe_lightcone(self, brightness_temp):
+        """Simulating telescope noise and taking UV grid into account."""
+        # remove the mean of the signal
+        brightness_temp -= brightness_temp.mean(axis=(0, 1), keepdims=True)
+        # add noise
+        return self.add_noise(brightness_temp)
+
+    def add_noise(self, brightness_temp):
+        """Adding telescope noise."""
+        noise = (
+            np.random.normal(loc=0.0, scale=1.0, size=(2,) + self.uv.shape) * self.sigma
+        )
+        noise = noise[0] + 1.0j * noise[1]
+        noise /= np.sqrt(self.uv)
+        noise = noise.astype(np.complex64)
+        brightness_temp = (
+            np.fft.fft2(brightness_temp, axes=(0, 1)).astype(np.complex64) + noise
+        )
+        brightness_temp[self.uv_mask] = 0.0
+        return np.real(np.fft.ifft2(brightness_temp, axes=(0, 1))).astype(np.float32)
