@@ -735,6 +735,74 @@ class Likelihood1DPowerObservedLightcone(Likelihood1DPowerLightcone):
             / (Nx * Ny * Nz)
         )
 
+    @staticmethod
+    def _chunk_indices(n_slices, nchunks):
+        chunk_indices = list(
+            range(
+                0,
+                n_slices,
+                n_slices // nchunks,
+            )
+        )
+
+        if len(chunk_indices) > nchunks:
+            chunk_indices = chunk_indices[:-1]
+
+        chunk_indices.append(n_slices)
+        return chunk_indices
+
+    @staticmethod
+    def _iterate_compute_power(
+        box,
+        chunk_indices,
+        cell_size,
+        BOX_LEN,
+        n_psbins,
+        logk,
+        ignore_kperp_zero,
+        ignore_kpar_zero,
+        ignore_k_zero,
+        formatting="list_of_dicts",
+    ):
+        """Simple for-loop over lightcone slices.
+
+        Parameters
+        ----------
+        formatting : str
+            Either "list_of_dicts" or "dict_of_lists", depending if the data should
+            be outputted as `[dict(k = ..., delta = ...), ...]` or `dict(k = [...], delta = [...])`.
+        """
+        if formatting == "list_of_dicts":
+            data = []
+        elif formatting == "dict_of_lists":
+            data = {"k": [], "delta": []}
+        else:
+            raise ValueError(
+                "`formatting` should be either "
+                "`list_of_dicts` or `dict_of_lists`, but is {}".format(formatting)
+            )
+
+        for i in range(len(chunk_indices) - 1):
+            start = chunk_indices[i]
+            end = chunk_indices[i + 1]
+            chunklen = (end - start) * cell_size
+
+            power, k = Likelihood1DPowerLightcone.compute_power(
+                box[:, :, start:end],
+                (BOX_LEN, BOX_LEN, chunklen),
+                n_psbins,
+                log_bins=logk,
+                ignore_kperp_zero=ignore_kperp_zero,
+                ignore_kpar_zero=ignore_kpar_zero,
+                ignore_k_zero=ignore_k_zero,
+            )
+            if formatting == "list_of_dicts":
+                data.append({"k": k, "delta": power * k ** 3 / (2 * np.pi ** 2)})
+            else:
+                data["k"].append(k)
+                data["delta"].append(power * k ** 3 / (2 * np.pi ** 2))
+        return data
+
     def reduce_data(self, ctx):
         """Reduce the data in the context to a list of models (one for each redshift chunk)."""
         lightcone = ctx.get("lightcone")
@@ -744,47 +812,68 @@ class Likelihood1DPowerObservedLightcone(Likelihood1DPowerLightcone):
                 observed_brightness_temp, (self.kernel_size,) * 3
             )
 
-        data = []
-        chunk_indices = list(
-            range(
-                0,
-                lightcone.n_slices // self.kernel_size,
-                lightcone.n_slices // self.kernel_size // self.nchunks,
-            )
+        chunk_indices = self._chunk_indices(
+            lightcone.n_slices // self.kernel_size, self.n_chunks
         )
 
-        if len(chunk_indices) > self.nchunks:
-            chunk_indices = chunk_indices[:-1]
+        return self._iterate_compute_power(
+            observed_brightness_temp,
+            chunk_indices,
+            lightcone.cell_size * self.kernel_size,
+            self.n_psbins,
+            self.logk,
+            self.ignore_kperp_zero,
+            self.ignore_kpar_zero,
+            self.ignore_k_zero,
+            formatting="list_of_dicts",
+        )
 
-        chunk_indices.append(lightcone.n_slices // self.kernel_size)
+    def define_noise(self, ctx, model, n_realizations=100):
+        """Define noise properties.
 
-        for i in range(self.nchunks):
-            start = chunk_indices[i]
-            end = chunk_indices[i + 1]
-            chunklen = (end - start) * lightcone.cell_size * self.kernel_size
+        Parameters
+        ----------
+        n_realizations : int, optional
+            Number of realizations to estimate the noise power.
+        """
+        logger.info(
+            f"Computing noise power estimation over {n_realizations} realizations."
+        )
+        lightcone = ctx.get("lightcone")
+        chunk_indices = self._chunk_indices(
+            lightcone.n_slices // self.kernel_size, self.n_chunks
+        )
 
-            power, k = self.compute_power(
-                observed_brightness_temp[:, :, start:end],
-                (
-                    self.user_params.BOX_LEN * self.kernel_size,
-                    self.user_params.BOX_LEN * self.kernel_size,
-                    chunklen,
-                ),
+        uv = ctx.get("observed_uv")
+        uv_mask = uv < 1e-12
+        uv_sqrt = np.sqrt(uv)
+        sigma = ctx.get("observed_sigma")
+
+        deltas = []
+        for i in range(n_realizations):
+            noise = np.random.normal(loc=0.0, scale=1.0, size=(2,) + uv.shape) * sigma
+            noise = noise[0] + 1.0j * noise[1]
+            noise /= uv_sqrt
+            noise[uv_mask] = 0.0
+            noise = np.real(np.fft.ifft2(noise, axes=(0, 1))).astype(np.float32)
+            if self.kernel_size > 1:
+                noise = self.boxcar3D_smoothing(noise, (self.kernel_size,) * 3)
+            data = self._iterate_compute_power(
+                noise,
+                chunk_indices,
+                lightcone.cell_size * self.kernel_size,
                 self.n_psbins,
-                log_bins=self.logk,
-                ignore_kperp_zero=self.ignore_kperp_zero,
-                ignore_kpar_zero=self.ignore_kpar_zero,
-                ignore_k_zero=self.ignore_k_zero,
+                self.logk,
+                self.ignore_kperp_zero,
+                self.ignore_kpar_zero,
+                self.ignore_k_zero,
+                formatting="dict_of_lists",
             )
-            data.append({"k": k, "delta": power * k ** 3 / (2 * np.pi ** 2)})
-
-        return data
-
-    def store(self, model, storage):
-        """Store the model into backend storage."""
-        # add the power to the written data
-        for i, m in enumerate(model):
-            storage.update({k + "_%s" % i: v for k, v in m.items()})
+            deltas.append(data["delta"])
+        logger.info("Finished computing the noise power estimation.")
+        delta = np.mean(np.array(deltas), axis=0).astype(np.float32)
+        # format to list_of_dicts
+        return [{"k": k, "delta": d} for k, d in zip(data["k"], delta)]
 
 
 class LikelihoodPlanckPowerSpectra(LikelihoodBase):
