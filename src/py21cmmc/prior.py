@@ -110,7 +110,7 @@ class PriorGaussianKDE(PriorFunction):
         self.dw = DataWhitener(algorithm=whitening_algorithm)
         self.dw.fit(chain)
 
-        self.kde = KernelDensity(bandwidth)
+        self.kde = KernelDensity(bandwidth=bandwidth)
         self.kde.fit(self.dw.whiten(chain))
 
     def computePrior(self, arg_values):
