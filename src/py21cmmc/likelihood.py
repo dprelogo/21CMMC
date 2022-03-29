@@ -813,7 +813,7 @@ class Likelihood1DPowerObservedLightcone(Likelihood1DPowerLightcone):
             )
 
         chunk_indices = self._chunk_indices(
-            lightcone.n_slices // self.kernel_size, self.n_chunks
+            lightcone.n_slices // self.kernel_size, self.nchunks
         )
 
         return self._iterate_compute_power(
@@ -841,7 +841,7 @@ class Likelihood1DPowerObservedLightcone(Likelihood1DPowerLightcone):
         )
         lightcone = ctx.get("lightcone")
         chunk_indices = self._chunk_indices(
-            lightcone.n_slices // self.kernel_size, self.n_chunks
+            lightcone.n_slices // self.kernel_size, self.nchunks
         )
 
         uv = ctx.get("observed_uv")
