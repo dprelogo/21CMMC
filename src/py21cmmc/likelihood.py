@@ -820,6 +820,7 @@ class Likelihood1DPowerObservedLightcone(Likelihood1DPowerLightcone):
             observed_brightness_temp,
             chunk_indices,
             lightcone.cell_size * self.kernel_size,
+            self.user_params.BOX_LEN,
             self.n_psbins,
             self.logk,
             self.ignore_kperp_zero,
