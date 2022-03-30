@@ -364,7 +364,9 @@ class Likelihood1DPowerCoeval(LikelihoodBaseFile):
 
     def _check_noise_format(self):
         for i, n in enumerate(self.noise):
-            print(n)
+            print(f"NOISE:\n {n}\n KEYS: {n.keys()}")
+            print("k in n", "k" in n)
+            print("k not in n", "k" not in n)
             if "k" not in n or "errs" not in n:
                 raise ValueError(
                     f"noisefile #{i+1} of {len(self.noise)} has the wrong format"
