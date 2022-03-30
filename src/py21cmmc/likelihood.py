@@ -364,9 +364,6 @@ class Likelihood1DPowerCoeval(LikelihoodBaseFile):
 
     def _check_noise_format(self):
         for i, n in enumerate(self.noise):
-            print(f"NOISE:\n {n}\n KEYS: {n.keys()}")
-            print("k in n", "k" in n)
-            print("k not in n", "k" not in n)
             if "k" not in n or "errs" not in n:
                 raise ValueError(
                     f"noisefile #{i+1} of {len(self.noise)} has the wrong format"
@@ -876,9 +873,9 @@ class Likelihood1DPowerObservedLightcone(Likelihood1DPowerLightcone):
             )
             deltas.append(data["delta"])
         logger.info("Finished computing the noise power estimation.")
-        delta = np.mean(np.array(deltas), axis=0).astype(np.float32)
+        errs = np.std(np.array(deltas), axis=0, ddof=1).astype(np.float32)
         # format to list_of_dicts
-        return [{"k": k, "delta": d} for k, d in zip(data["k"], delta)]
+        return [{"k": k, "errs": e} for k, e in zip(data["k"], errs)]
 
 
 class LikelihoodPlanckPowerSpectra(LikelihoodBase):
