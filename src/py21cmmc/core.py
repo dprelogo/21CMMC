@@ -1229,9 +1229,9 @@ class CoreObservedLightCone(CoreLightConeModule):
         # remove the mean of the signal
         brightness_temp -= brightness_temp.mean(axis=(0, 1), keepdims=True)
         # add noise
-        return self.add_noise(brightness_temp)
+        return self._add_noise(brightness_temp)
 
-    def add_noise(self, brightness_temp):
+    def _add_noise(self, brightness_temp):
         """Adding telescope noise."""
         if self.add_noise is True:
             noise = (
