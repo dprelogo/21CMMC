@@ -728,6 +728,24 @@ class Likelihood1DPowerObservedLightcone(Likelihood1DPowerLightcone):
             )
         self.full_covariance = full_covariance
 
+    def setup(self):
+        """Perform post-init setup."""
+        LikelihoodBaseFile.setup(self)
+
+        # Ensure that there is one dataset and noiseset per redshift.
+        if len(self.data) != self.nchunks:
+            raise ValueError(
+                "There needs to be one dataset (datafile) for each chunk!!"
+            )
+
+        if self.noise and len(self.noise) != 1:
+            raise ValueError("There needs to be only one dataset (noisefile)!")
+
+        # Check if all data is formatted correctly.
+        self._check_data_format()
+        if self.noise:
+            self._check_noise_format()
+
     @staticmethod
     def boxcar3D_smoothing(data, kernel):
         """Simple implementation of 3D boxcar smoothing."""
