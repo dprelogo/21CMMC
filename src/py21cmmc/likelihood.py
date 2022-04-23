@@ -722,10 +722,6 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
-        if not self._simulate:
-            raise ValueError(
-                "It is necessary to simulate the mock for the likelihood computation."
-            )
         if powerspectrum_dim not in [1, 2]:
             raise ValueError("Only 1D or 2D PS calculation is supported.")
         self.powerspectrum_dim = powerspectrum_dim
