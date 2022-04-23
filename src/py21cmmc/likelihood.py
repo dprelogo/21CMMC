@@ -7,9 +7,11 @@ from multiprocessing.sharedctypes import Value
 from os import path, rename
 from powerbox.tools import get_power
 from py21cmfast import wrapper as lib
+from re import I
 from scipy.interpolate import InterpolatedUnivariateSpline
 
 from . import core
+from . import powerspectrum as ps
 
 loaded_cliks = {}
 logger = logging.getLogger("21cmFAST")
@@ -684,34 +686,50 @@ class Likelihood1DPowerLightcone(Likelihood1DPowerCoeval):
             storage.update({k + "_%s" % i: v for k, v in m.items()})
 
 
-class Likelihood1DPowerObservedLightcone(Likelihood1DPowerLightcone):
+class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
     """A likelihood very similar to :class:`Likelihood1DPowerLightcone`, except it uses an "observed" lightcone.
 
     Additionally, it provides functionality to smooth the lightcone with
-    a box-car kernel before calculating the powerspetrum, and calculate the horizon wedge excision.
+    a box-car kernel before calculating the power spectrum, and calculate the horizon wedge excision.
+    It supports both spherically- and cylindrically-averaged power spectrum.
     For other parameters, see :class:`Likelihood1DPowerCoeval` and :class:`Likelihood1DPowerLightcone`.
 
     Parameters
     ----------
-    full_covariance : bool, optional
-        Either to use a full covariance in the likelihood or not.
-        If `False`, uses only diagonal covariance approximation.
+    powerspectrum_dim : int, optional
+        Dimensionality of the powerspectrum to use.
+        If 1, calculates spherically-averaged PS. If 2, calculates cylindrical average.
+        Defaults to 1.
+    n_psbins: int or tuple, optional
+        If `powerspectrum_dim is 1`, it defines the number of bins for sperically-averaged PS
+        If `powerspectrum_dim is 2`, it should contain a tuple `(n_psbins_perp, n_psbins_par)`.
     smoothing_kernel_size : int, optional
         Smoothing size, in number of voxels. If set, smooths the lightcone with
         `(smoothing_kernel_size) * 3` kernel before powerspectrum calculation.
         Defaults to 1, i.e. no smoothing.
     horizon_wedge_excision : bool, optional
         Either to delete the modes below the wedge or not.
+    full_covariance : bool, optional
+        Either to use a full covariance in the likelihood or not.
+        If `False`, uses only diagonal covariance approximation.
+    likelihood_sample_correction: bool, optional
+        For the case of `full_covariance is True`, corrects Gaussian likelihood
+        for the fact that calculated covariance matrix of the data is not exact,
+        but just a sample from the distribution of actual covariance.
+        Ignored if `full_covariance is False`.
     """
 
     required_cores = (core.CoreObservedLightCone,)
 
+    # TODO: Implement Horizon wedge excision
     def __init__(
         self,
         *args,
+        powerspectrum_dim=1,
         smoothing_kernel_size=1,
         horizon_wedge_excision=False,
         full_covariance=False,
+        likelihood_sample_correction=True,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -719,14 +737,18 @@ class Likelihood1DPowerObservedLightcone(Likelihood1DPowerLightcone):
             raise ValueError(
                 "It is necessary to simulate the mock for the likelihood computation."
             )
+        if powerspectrum_dim not in [1, 2]:
+            raise ValueError("Only 1D or 2D PS calculation is supported.")
+        self.powerspectrum_dim = powerspectrum_dim
         if smoothing_kernel_size < 1 or type(smoothing_kernel_size) is not int:
             raise ValueError("Smoothing size should be a positive integer.")
         self.kernel_size = smoothing_kernel_size
         if horizon_wedge_excision:
             raise NotImplementedError(
-                "At the moment horizon excision is not implemented"
+                "At the moment horizon excision is not implemented."
             )
         self.full_covariance = full_covariance
+        self.likelihood_sample_correction = likelihood_sample_correction
 
     def setup(self):
         """Perform post-init setup."""
@@ -763,71 +785,90 @@ class Likelihood1DPowerObservedLightcone(Likelihood1DPowerLightcone):
         )
 
     @staticmethod
-    def _chunk_indices(n_slices, nchunks):
-        chunk_indices = list(
-            range(
-                0,
-                n_slices,
-                n_slices // nchunks,
-            )
-        )
-
-        if len(chunk_indices) > nchunks:
-            chunk_indices = chunk_indices[:-1]
-
-        chunk_indices.append(n_slices)
-        return chunk_indices
-
-    @staticmethod
-    def _iterate_compute_power(
-        box,
-        chunk_indices,
+    def compute_power(
+        lc,
         cell_size,
-        BOX_LEN,
-        n_psbins,
-        logk,
-        ignore_kperp_zero,
-        ignore_kpar_zero,
-        ignore_k_zero,
-        formatting="list_of_dicts",
+        dim=2,
+        n_psbins=(12, 12),
+        logk=True,
+        convert_to_delta=True,
+        nchunks=10,
+        unwrap=True,
     ):
-        """Simple for-loop over lightcone slices.
+        """Computing 1D or 2D powerspectrum.
 
         Parameters
         ----------
-        formatting : str
-            Either "list_of_dicts" or "dict_of_lists", depending if the data should
-            be outputted as `[dict(k = ..., delta = ...), ...]` or `dict(k = [...], delta = [...])`.
+        lc : array
+            Lightcone for which powespectrum is computed.
+        cell_size : float
+            Size of the cell in Mpc.
+        dim : int, optional
+            Either 1 or 2, for 1D or 2D powerspectrum calculation
+        n_psbins : int or tuple
+            If `dim == 1` defines number of powerspectrum bins.
+            If `dim == 2` defines a pair of `k_perp, k_par` powerspectrum bins.
+        logk : bool, optional
+            Either to bin in log- or linear-space.
+        convert_to_delta : bool, optional
+            If `True`, returns non-dimensional power.
+        nchunks : int
+            Number of lightcone chunks. By default, lightcone is divided into
+            equally-sized cubes and only first `nchunks` are taken into account.
+        unwrap : bool, optional
+            If `True` it returns a list of powerspectrums for each chunk.
+            Otherwise, all powerspectrums are returned as one array.
         """
-        if formatting == "list_of_dicts":
-            data = []
-        elif formatting == "dict_of_lists":
-            data = {"k": [], "delta": []}
-        else:
-            raise ValueError(
-                "`formatting` should be either "
-                "`list_of_dicts` or `dict_of_lists`, but is {}".format(formatting)
-            )
-
-        for i in range(len(chunk_indices) - 1):
-            start = chunk_indices[i]
-            end = chunk_indices[i + 1]
-            chunklen = (end - start) * cell_size
-
-            power, k = Likelihood1DPowerLightcone.compute_power(
-                box[:, :, start:end],
-                (BOX_LEN, BOX_LEN, chunklen),
+        if dim == 1:
+            PS, k = ps.ps1D(
+                lc,
+                cell_size,
                 n_psbins,
-                log_bins=logk,
-                ignore_kperp_zero=ignore_kperp_zero,
-                ignore_kpar_zero=ignore_kpar_zero,
-                ignore_k_zero=ignore_k_zero,
+                logk,
+                convert_to_delta,
             )
-            if formatting == "list_of_dicts":
-                data.append({"k": k, "delta": power * k ** 3 / (2 * np.pi ** 2)})
+            ps_chunks = len(PS["power"])
+            if ps_chunks < nchunks:
+                logger.warning(
+                    f"`nchunks` ({nchunks}) larger than computed powers ({ps_chunks})."
+                )
+                nchunks = ps_chunks
+            if unwrap:
+                data = [{"delta": ps, "k": k} for ps in PS["power"][:nchunks]]
             else:
-                data["k"].append(k)
-                data["delta"].append(power * k ** 3 / (2 * np.pi ** 2))
+                data = {"delta": PS["power"][:nchunks], "k": k}
+        else:
+            if len(n_psbins) != 2:
+                raise ValueError(
+                    f"`n_psbins` should contain `n_psbins_perp` and `n_psbins_par`, but is {n_psbins}"
+                )
+            n_psbins_perp, n_psbins_par = n_psbins
+            PS, k_perp, k_par = ps.ps2D(
+                lc,
+                cell_size,
+                n_psbins_par,
+                n_psbins_perp,
+                logk,
+                convert_to_delta,
+            )
+            ps_chunks = len(PS["power"])
+            if ps_chunks < nchunks:
+                logger.warning(
+                    f"`nchunks` ({nchunks}) larger than computed powers ({ps_chunks})."
+                )
+                nchunks = ps_chunks
+            if unwrap:
+                data = [
+                    {"delta": ps, "k_perp": k_perp, "k_par": k_par}
+                    for ps in PS["power"][:nchunks]
+                ]
+            else:
+                data = {
+                    "delta": PS["power"][:nchunks],
+                    "k_perp": k_perp,
+                    "k_par": k_par,
+                }
+
         return data
 
     def reduce_data(self, ctx):
@@ -839,23 +880,18 @@ class Likelihood1DPowerObservedLightcone(Likelihood1DPowerLightcone):
                 observed_brightness_temp, (self.kernel_size,) * 3
             )
 
-        chunk_indices = self._chunk_indices(
-            lightcone.n_slices // self.kernel_size, self.nchunks
-        )
-
-        return self._iterate_compute_power(
+        return self.compute_power(
             observed_brightness_temp,
-            chunk_indices,
             lightcone.cell_size * self.kernel_size,
-            self.user_params.BOX_LEN,
-            self.n_psbins,
-            self.logk,
-            self.ignore_kperp_zero,
-            self.ignore_kpar_zero,
-            self.ignore_k_zero,
-            formatting="list_of_dicts",
+            dim=self.powerspectrum_dim,
+            n_psbins=self.n_psbins,
+            logk=self.logk,
+            convert_to_delta=True,
+            nchunks=self.nchunks,
+            unwrap=True,
         )
 
+    # TODO: add simulations to the noise
     def define_noise(self, ctx, model, n_realizations=200):
         """Define noise properties.
 
@@ -865,16 +901,18 @@ class Likelihood1DPowerObservedLightcone(Likelihood1DPowerLightcone):
             Number of realizations to estimate the noise power.
         """
         lightcone = ctx.get("lightcone")
-        chunk_indices = self._chunk_indices(
-            lightcone.n_slices // self.kernel_size, self.nchunks
-        )
-        if self.full_covariance and self.nchunks * self.n_psbins > n_realizations:
+        if self.powerspectrum_dim == 1:
+            psbins = self.n_psbins
+        else:
+            psbins = self.n_psbins[0] * self.n_psbins[1]
+
+        if self.full_covariance and self.nchunks * psbins > n_realizations:
             logger.warning(
                 "For full covariance calculation, number of realizations "
                 "should be larger than the number of dimensions. "
                 "Changing `n_realizations` to `dim + 1`."
             )
-            n_realizations = self.nchunks * self.n_psbins + 1
+            n_realizations = self.nchunks * psbins + 1
         uv = ctx.get("observed_uv")
         uv_mask = uv < 1e-12
         uv_sqrt = np.sqrt(uv)
@@ -893,17 +931,15 @@ class Likelihood1DPowerObservedLightcone(Likelihood1DPowerLightcone):
             noise = np.real(np.fft.ifft2(noise, axes=(0, 1))).astype(np.float32)
             if self.kernel_size > 1:
                 noise = self.boxcar3D_smoothing(noise, (self.kernel_size,) * 3)
-            data = self._iterate_compute_power(
+            data = self.compute_power(
                 noise,
-                chunk_indices,
                 lightcone.cell_size * self.kernel_size,
-                self.user_params.BOX_LEN,
-                self.n_psbins,
-                self.logk,
-                self.ignore_kperp_zero,
-                self.ignore_kpar_zero,
-                self.ignore_k_zero,
-                formatting="dict_of_lists",
+                dim=self.powerspectrum_dim,
+                n_psbins=self.n_psbins,
+                logk=self.logk,
+                convert_to_delta=True,
+                nchunks=self.nchunks,
+                unwrap=False,
             )
             deltas.append(data["delta"])
         logger.info("Finished computing the noise power estimation.")
@@ -913,13 +949,28 @@ class Likelihood1DPowerObservedLightcone(Likelihood1DPowerLightcone):
 
         if self.full_covariance:
             errs = np.cov(deltas.T).astype(np.float32)
+            errs_inv = np.linalg.inv(errs)
+            additional_kwargs = {"N": deltas.shape[0], "p": deltas.shape[-1]}
         else:
             errs = np.var(deltas, axis=0, ddof=1).astype(np.float32)
             errs = errs.flatten()
-        return [{"k": data["k"][0], "errs": errs}]
+            errs_inv = 1 / errs
+            additional_kwargs = {}
+        if self.powerspectrum_dim == 1:
+            res = {"k": data["k"], "errs": errs, "errs_inv": errs_inv}
+        else:
+            res = {
+                "k_perp": data["k_perp"],
+                "k_par": data["k_par"],
+                "errs": errs,
+                "errs_inv": errs_inv,
+            }
+        for k, v in additional_kwargs.items():
+            res[k] = v
+        return [res]
 
     def computeLikelihood(self, model):
-        """Compute the likelihood given a model.
+        """Compute the likelihood given a model. Here, model uncertainty is ignored.
 
         Parameters
         ----------
@@ -927,46 +978,54 @@ class Likelihood1DPowerObservedLightcone(Likelihood1DPowerLightcone):
             A list of dictionaries, one for each redshift. Exactly the output of
             :meth:'reduce_data`.
         """
-        lnl = 0
-        model_uncertainty = []
         total_mask = []
         mu = []
         x = []
-        for i, (m, pd) in enumerate(zip(model, self.data_spline)):
-            mask = np.logical_and(m["k"] <= self.max_k, m["k"] >= self.min_k)
+        # ignoring data spline
+        for i, (m, d) in enumerate(zip(model, self.data)):
+            if self.powerspectrum_dim == 1:
+                mask = np.logical_and(m["k"] <= self.max_k, m["k"] >= self.min_k)
+            else:
+                mask_perp = np.logical_and(
+                    m["k_perp"] <= self.max_k, m["k_perp"] >= self.min_k
+                )
+                mask_par = np.logical_and(
+                    m["k_par"] <= self.max_k, m["k_par"] >= self.min_k
+                )
+                mask = np.einsum("i,j->ij", mask_perp, mask_par)
+            # ignoring NaN bins
+            mask = np.logical_and(mask, ~np.isnan(d["delta"]))
             total_mask.append(mask)
 
-            model_uncertainty.append(
-                self.model_uncertainty * pd(m["k"][mask])
-                if not self.error_on_model
-                else self.model_uncertainty * m["delta"][mask]
-            )
-
             x.append(m["delta"][mask])
-            mu.append(pd(m["k"][mask]))
+            mu.append(d["delta"][mask])
 
-        # here we're ignoring the noise spline
+        # ignoring the noise spline
 
-        model_uncertainty = np.concatenate(model_uncertainty)
-        total_mask = np.conatenate(total_mask)
+        total_mask = np.stack(total_mask, axis=0)
+        total_mask = total_mask.flatten()
         good_samples = np.sum(total_mask)
-        mu = np.concatenate(mu)
-        x = np.concatenate(x)
+        mu = np.concatenate(mu, axis=0)
+        x = np.concatenate(x, axis=0)
         if self.full_covariance:
             # making a mask for the covariance matrix
             total_mask = np.einsum("i,j->ij", total_mask, total_mask)
-            sigma = self.noise[0]["errs"][total_mask].reshape(
+            sigma_inv = self.noise[0]["errs_inv"][total_mask].reshape(
                 good_samples, good_samples
             )
-            sigma += np.diag(model_uncertainty ** 2)
-            sigma_inv = np.linalg.inv(sigma)
             delta = x - mu
-            lnl = -0.5 * np.einsum("i,ij,j", delta, sigma_inv, delta)
+            # covariance
+            distance = np.einsum("i,ij,j", delta, sigma_inv, delta)
+            if self.likelihood_sample_correction:
+                N = self.noise[0]["N"]
+                lnl = -N / 2 * np.log(1 + distance / (N - 1))
+            else:
+                lnl = -0.5 * distance
+
         else:
-            sigma = self.noise[0]["errs"][total_mask]
-            sigma += model_uncertainty ** 2
+            sigma_inv = self.noise[0]["errs_inv"][total_mask]
             delta = x - mu
-            lnl = -0.5 * np.sum(delta ** 2 / sigma)
+            lnl = -0.5 * np.einsum("i,i,i", delta, sigma_inv, delta)
 
         logger.debug("Likelihood computed: {lnl}".format(lnl=lnl))
 
