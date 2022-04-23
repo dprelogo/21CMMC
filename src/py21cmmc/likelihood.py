@@ -336,16 +336,6 @@ class Likelihood1DPowerCoeval(LikelihoodBaseFile):
     ):
         super().__init__(*args, **kwargs)
 
-        if (
-            self.noisefile
-            and self.datafile
-            and len(self.datafile) != len(self.noisefile)
-        ):
-            raise ValueError(
-                "If noisefile or datafile are provided, they should have the same number "
-                "of files (one for each coeval box)"
-            )
-
         self.n_psbins = n_psbins
         self.min_k = min_k
         self.max_k = max_k
