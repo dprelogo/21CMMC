@@ -7,7 +7,6 @@ from multiprocessing.sharedctypes import Value
 from os import path, rename
 from powerbox.tools import get_power
 from py21cmfast import wrapper as lib
-from re import I
 from scipy.interpolate import InterpolatedUnivariateSpline
 
 from . import core
@@ -978,43 +977,64 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
             A list of dictionaries, one for each redshift. Exactly the output of
             :meth:'reduce_data`.
         """
-        total_mask = []
+        total_data_mask = []
         mu = []
         x = []
         # ignoring data spline
         for i, (m, d) in enumerate(zip(model, self.data)):
             if self.powerspectrum_dim == 1:
+                # data_mask ignores only k's outside the range
+                data_mask = np.logical_and(d["k"] <= self.max_k, d["k"] >= self.min_k)
+                # model mask ignores k's outside the range, and NaN k's seen in data
                 mask = np.logical_and(m["k"] <= self.max_k, m["k"] >= self.min_k)
+                mask = np.logical_and(mask, ~d["k_nanmask"])
             else:
+                data_mask_perp = np.logical_and(
+                    d["k_perp"] <= self.max_k, d["k_perp"] >= self.min_k
+                )
+                data_mask_par = np.logical_and(
+                    d["k_par"] <= self.max_k, d["k_par"] >= self.min_k
+                )
+                data_mask = np.einsum("i,j->ij", data_mask_perp, data_mask_par)
+
                 mask_perp = np.logical_and(
                     m["k_perp"] <= self.max_k, m["k_perp"] >= self.min_k
                 )
+                mask_perp = np.logical_and(mask_perp, ~d["k_perp_nanmask"])
                 mask_par = np.logical_and(
                     m["k_par"] <= self.max_k, m["k_par"] >= self.min_k
                 )
+                mask_par = np.logical_and(mask_par, ~d["k_par_nanmask"])
                 mask = np.einsum("i,j->ij", mask_perp, mask_par)
-            # ignoring NaN bins
-            mask = np.logical_and(mask, ~np.isnan(d["delta"]))
-            total_mask.append(mask)
 
+            # ignoring NaN bins
             x.append(m["delta"][mask])
-            mu.append(d["delta"][mask])
+            mu.append(d["delta"][data_mask])
+            total_data_mask.append(data_mask)
 
         # ignoring the noise spline
-
-        total_mask = np.stack(total_mask, axis=0)
-        total_mask = total_mask.flatten()
-        good_samples = np.sum(total_mask)
+        total_data_mask = np.stack(total_data_mask, axis=0)
+        total_data_mask = total_data_mask.flatten()
+        good_data_points = np.sum(total_data_mask)
         mu = np.concatenate(mu, axis=0)
         x = np.concatenate(x, axis=0)
+        if len(mu) != len(x):
+            raise ValueError(
+                f"Something went wrong in NaN cleaning. Data vector is of size {len(mu)} "
+                f"and current model vector of size {len(x)}."
+            )
         if self.full_covariance:
             # making a mask for the covariance matrix
-            total_mask = np.einsum("i,j->ij", total_mask, total_mask)
-            sigma_inv = self.noise[0]["errs_inv"][total_mask].reshape(
-                good_samples, good_samples
+            total_data_mask = np.einsum("i,j->ij", total_data_mask, total_data_mask)
+            sigma_inv = self.noise[0]["errs_inv"][total_data_mask].reshape(
+                good_data_points, good_data_points
             )
+            if len(sigma_inv) != len(x):
+                raise ValueError(
+                    f"Something went wrong in NaN cleaning. Covariance is of size {sigma_inv.shape} "
+                    f"and current model vector of size {len(x)}."
+                )
             delta = x - mu
-            # covariance
             distance = np.einsum("i,ij,j", delta, sigma_inv, delta)
             if self.likelihood_sample_correction:
                 N = self.noise[0]["N"]
@@ -1023,7 +1043,12 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
                 lnl = -0.5 * distance
 
         else:
-            sigma_inv = self.noise[0]["errs_inv"][total_mask]
+            sigma_inv = self.noise[0]["errs_inv"][total_data_mask]
+            if len(sigma_inv) != len(x):
+                raise ValueError(
+                    f"Something went wrong in NaN cleaning. Covariance is of size {len(sigma_inv)} "
+                    f"and current model vector of size {len(x)}."
+                )
             delta = x - mu
             lnl = -0.5 * np.einsum("i,i,i", delta, sigma_inv, delta)
 
