@@ -1007,6 +1007,12 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
         good_data_points = np.sum(total_data_mask)
         mu = np.concatenate(mu, axis=0)
         x = np.concatenate(x, axis=0)
+
+        # final cleaning, just in case
+        nans = np.logical_or(np.isnan(mu), np.isnan(x))
+        mu[nans] = 0.0
+        x[nans] = 0.0
+
         if len(mu) != len(x):
             raise ValueError(
                 f"Something went wrong in NaN cleaning. Data vector is of size {len(mu)} "
