@@ -426,7 +426,6 @@ class CoreCoevalModule(CoreBase):
             regenerate=False,
             random_seed=self.initial_conditions_seed,
             write=False,
-            direc=self.io_options["cache_dir"],
             **self.global_params,
         )
 
@@ -550,7 +549,6 @@ class CoreLightConeModule(CoreCoevalModule):
             regenerate=False,
             random_seed=self.initial_conditions_seed,
             write=False,
-            direc=self.io_options["cache_dir"],
             lightcone_quantities=lightcone_quantities,
             global_quantities=lightcone_quantities,
             **self.global_params,
@@ -1210,7 +1208,6 @@ class CoreObservedLightCone(CoreLightConeModule):
                 regenerate=False,
                 random_seed=self.initial_conditions_seed,
                 write=False,
-                direc=self.io_options["cache_dir"],
                 lightcone_quantities=lightcone_quantities,
                 global_quantities=lightcone_quantities,
                 **self.global_params,
