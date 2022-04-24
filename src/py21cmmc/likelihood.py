@@ -970,16 +970,19 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
         for i, (m, d) in enumerate(zip(model, self.data)):
             if self.powerspectrum_dim == 1:
                 # data_mask ignores only k's outside the range
-                data_mask = np.logical_and(d["k"] <= self.max_k, d["k"] >= self.min_k)
+                data_k = d["k"][~d["k_nanmask"]]
+                data_mask = np.logical_and(data_k <= self.max_k, data_k >= self.min_k)
                 # model mask ignores k's outside the range, and NaN k's seen in data
                 mask = np.logical_and(m["k"] <= self.max_k, m["k"] >= self.min_k)
                 mask = np.logical_and(mask, ~d["k_nanmask"])
             else:
+                data_k_perp = d["k_perp"][~d["k_perp_nanmask"]]
+                data_k_par = d["k_par"][~d["k_par_nanmask"]]
                 data_mask_perp = np.logical_and(
-                    d["k_perp"] <= self.max_k, d["k_perp"] >= self.min_k
+                    data_k_perp <= self.max_k, data_k_perp >= self.min_k
                 )
                 data_mask_par = np.logical_and(
-                    d["k_par"] <= self.max_k, d["k_par"] >= self.min_k
+                    data_k_par <= self.max_k, data_k_par >= self.min_k
                 )
                 data_mask = np.einsum("i,j->ij", data_mask_perp, data_mask_par)
 
