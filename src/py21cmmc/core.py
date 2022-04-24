@@ -1209,7 +1209,7 @@ class CoreObservedLightCone(CoreLightConeModule):
                 user_params=self.user_params,
                 regenerate=False,
                 random_seed=self.initial_conditions_seed,
-                write=self.io_options["cache_mcmc"],
+                write=False,
                 direc=self.io_options["cache_dir"],
                 lightcone_quantities=lightcone_quantities,
                 global_quantities=lightcone_quantities,
