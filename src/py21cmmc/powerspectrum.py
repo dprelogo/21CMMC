@@ -1,6 +1,4 @@
 """Functions to calculate spherical/cilyndrical power spectrum."""
-import jax
-import jax.numpy as jnp
 import numpy as np
 
 
@@ -11,6 +9,7 @@ def ps1D(
     logk=True,
     convert_to_delta=True,
     chunk_skip=None,
+    calculate_variance=False,
 ):
     """Calculating 1D PS for a series of redshifts for one lightcone.
 
@@ -31,13 +30,13 @@ def ps1D(
             PS is calculated on chunks `chunk_skip` apart.
             Eg. `chunk_skip = 2` amounts in taking every second redshift bin into account.
             If `None`, it amounts to the lightcone sky-plane size.
+        calculate_variance : bool
+            Either to calculate sample variance of each bin or not.
 
     Returns
     -------
         PS : dict
-            Power spectrum and its sample variance for all redshift bins.
-            If `convert_to_delta is True`, returns `{"delta": array, "var_delta": array}`,
-            otherwise, returns `{"power": array, "var_power": array}`.
+            Power spectrum and its sample variance (if flag is turned on) for all redshift bins.
         k_values : array
             Centers of k bins.
     """
@@ -47,16 +46,15 @@ def ps1D(
         n_psbins=n_psbins,
         chunk_skip=chunk_skip,
         logk=logk,
+        calculate_variance=calculate_variance,
     )
     if convert_to_delta is True:
-        conversion_factor = k_values ** 3 / (2 * jnp.pi ** 2)
-        PS["power"] = PS["power"] * conversion_factor[jnp.newaxis, ...]
-        PS["var_power"] = PS["var_power"] * conversion_factor[jnp.newaxis, ...] ** 2
+        conversion_factor = k_values ** 3 / (2 * np.pi ** 2)
+        PS["power"] = PS["power"] * conversion_factor[np.newaxis, ...]
+        if calculate_variance:
+            PS["var_power"] = PS["var_power"] * conversion_factor[np.newaxis, ...] ** 2
 
-    return (
-        {k: np.array(v, dtype=np.float32) for k, v in PS.items()},
-        np.array(k_values, dtype=np.float32),
-    )
+    return PS, k_values
 
 
 def ps2D(
@@ -67,6 +65,7 @@ def ps2D(
     logk=True,
     convert_to_delta=True,
     chunk_skip=None,
+    calculate_variance=False,
 ):
     """Calculating 2D PS for a series of redshifts for one lightcone.
 
@@ -91,13 +90,13 @@ def ps2D(
             PS is calculated on chunks `chunk_skip` apart.
             Eg. `chunk_skip = 2` amounts in taking every second redshift bin
             into account. If `None`, it amounts to the lightcone sky-plane size.
+        calculate_variance : bool
+            Either to calculate sample variance of each bin or not.
 
     Returns
     -------
         PS : dict
-            Power spectrum and its sample variance for all redshift bins.
-            If `convert_to_delta is True`, returns `{"delta": array, "var_delta": array}`,
-            otherwise, returns `{"power": array, "var_power": array}`.
+            Power spectrum and its sample variance (if flag is turned on) for all redshift bins.
         k_values_perp : array
             Centers of k_perp bins.
         k_values_par : array
@@ -110,22 +109,20 @@ def ps2D(
         n_psbins_perp=n_psbins_perp,
         chunk_skip=chunk_skip,
         logk=logk,
+        calculate_variance=calculate_variance,
     )
     if convert_to_delta is True:
-        k_values_cube = jnp.meshgrid(
+        k_values_cube = np.meshgrid(
             k_values_par, k_values_perp
         )  # all k_values on the 2D grid
         conversion_factor = (k_values_cube[1] ** 2 * k_values_cube[0]) / (
-            4 * jnp.pi ** 2
+            4 * np.pi ** 2
         )  # pre-factor k_perp**2 * k_par
-        PS["power"] = PS["power"] * conversion_factor[jnp.newaxis, ...]
-        PS["var_power"] = PS["var_power"] * conversion_factor[jnp.newaxis, ...] ** 2
+        PS["power"] = PS["power"] * conversion_factor[np.newaxis, ...]
+        if calculate_variance:
+            PS["var_power"] = PS["var_power"] * conversion_factor[np.newaxis, ...] ** 2
 
-    return (
-        {k: np.array(v, dtype=np.float32) for k, v in PS.items()},
-        np.array(k_values_perp, dtype=np.float32),
-        np.array(k_values_par, dtype=np.float32),
-    )
+    return PS, k_values_perp, k_values_par
 
 
 def _power_1D(
@@ -134,6 +131,7 @@ def _power_1D(
     n_psbins,
     chunk_skip,
     logk,
+    calculate_variance,
 ):
     HII_DIM = lightcone.shape[0]
     n_slices = lightcone.shape[-1]
@@ -142,32 +140,32 @@ def _power_1D(
     epsilon = 1e-12
 
     # DFT frequency modes
-    k = jnp.fft.fftfreq(HII_DIM, d=cell_size)
-    k = 2 * jnp.pi * k
+    k = np.fft.fftfreq(HII_DIM, d=cell_size)
+    k = 2 * np.pi * k
 
     # ignoring 0 and negative modes
-    k_min, k_max = k[1], jnp.abs(k).max()
+    k_min, k_max = k[1], np.abs(k).max()
     # maximal mode will be k_max * sqrt(3)
     if logk:
-        k_bins = jnp.logspace(
-            jnp.log10(k_min - epsilon),
-            jnp.log10(jnp.sqrt(3) * k_max + epsilon),
+        k_bins = np.logspace(
+            np.log10(k_min - epsilon),
+            np.log10(np.sqrt(3) * k_max + epsilon),
             n_psbins + 1,
         )
     else:
-        k_bins = jnp.linspace(
-            k_min - epsilon, jnp.sqrt(3) * k_max + epsilon, n_psbins + 1
+        k_bins = np.linspace(
+            k_min - epsilon, np.sqrt(3) * k_max + epsilon, n_psbins + 1
         )
     # grid of all k_values
-    k_cube = jnp.meshgrid(k, k, k)
+    k_cube = np.meshgrid(k, k, k)
     # calculating k_perp, k_par in cylindrical coordinates
-    k_sphere = jnp.sqrt(k_cube[0] ** 2 + k_cube[1] ** 2 + k_cube[2] ** 2)
+    k_sphere = np.sqrt(k_cube[0] ** 2 + k_cube[1] ** 2 + k_cube[2] ** 2)
     # return a bin index across flattened k_sphere array
-    k_sphere_digits = jnp.digitize(k_sphere.flatten(), k_bins)
+    k_sphere_digits = np.digitize(k_sphere.flatten(), k_bins)
     # count occurence of modes in each bin & cut out all values outside the edges
-    k_binsum = jnp.bincount(k_sphere_digits, length=n_psbins + 2)[1:-1]
+    k_binsum = np.bincount(k_sphere_digits, minlength=n_psbins + 2)[1:-1]
     # geometrical means for values
-    k_values = jnp.sqrt(k_bins[:-1] * k_bins[1:])
+    k_values = np.sqrt(k_bins[:-1] * k_bins[1:])
 
     lightcones = []  # all chunks that need to be computed
 
@@ -177,34 +175,45 @@ def _power_1D(
         end = i + HII_DIM
         lightcones.append(lightcone[..., start:end])
 
-    lightcones = jnp.array(lightcones, dtype=jnp.float32)
+    lightcones = np.array(lightcones, dtype=np.float32)
 
     V = (HII_DIM * cell_size) ** 3
     dV = cell_size ** 3
 
-    @jax.jit
-    @jax.vmap
     def _power(box):
-        FT = jnp.fft.fftn(box) * dV
-        PS_box = jnp.real(FT * jnp.conj(FT)) / V
+        FT = np.fft.fftn(box) * dV
+        PS_box = np.real(FT * np.conj(FT)) / V
         # calculating average power as a bin count with PS as weights
-        p = (
-            jnp.bincount(
-                k_sphere_digits, weights=PS_box.flatten(), length=n_psbins + 2
+        res = {}
+        res["power"] = (
+            np.bincount(
+                k_sphere_digits, weights=PS_box.flatten(), minlength=n_psbins + 2
             )[1:-1]
             / k_binsum
         )
         # calculating average square of the power, used for estimating sample variance
-        p_sq = (
-            jnp.bincount(
-                k_sphere_digits, weights=PS_box.flatten() ** 2, length=n_psbins + 2
-            )[1:-1]
-            / k_binsum
-        )
+        if calculate_variance:
+            p_sq = (
+                np.bincount(
+                    k_sphere_digits,
+                    weights=PS_box.flatten() ** 2,
+                    minlength=n_psbins + 2,
+                )[1:-1]
+                / k_binsum
+            )
+            res["var_power"] = p_sq - res["power"] ** 2
 
-        return {"power": p, "var_power": p_sq - p ** 2}
+        return res
 
-    return _power(lightcones), k_values
+    res = [_power(lc) for lc in lightcones]
+
+    P = {key: [] for key in res[0].keys()}
+    for r in res:
+        for key, value in r.items():
+            P[key].append(value)
+    P = {key: np.array(value, dtype=np.float32) for key, value in P.items()}
+
+    return P, k_values
 
 
 def _power_2D(
@@ -214,6 +223,7 @@ def _power_2D(
     n_psbins_perp,
     chunk_skip,
     logk,
+    calculate_variance,
 ):
     HII_DIM = lightcone.shape[0]
     n_slices = lightcone.shape[-1]
@@ -222,57 +232,57 @@ def _power_2D(
     epsilon = 1e-12
 
     # DFT frequency modes
-    k = jnp.fft.fftfreq(HII_DIM, d=cell_size)
-    k = 2 * jnp.pi * k
+    k = np.fft.fftfreq(HII_DIM, d=cell_size)
+    k = 2 * np.pi * k
     # ignoring 0 and negative modes
-    k_min, k_max = k[1], jnp.abs(k).max()
+    k_min, k_max = k[1], np.abs(k).max()
     if logk:
         # maximal perp mode will be k_max * sqrt(2)
-        k_bins_perp = jnp.logspace(
-            jnp.log10(k_min - epsilon),
-            jnp.log10(jnp.sqrt(2.0) * k_max + epsilon),
+        k_bins_perp = np.logspace(
+            np.log10(k_min - epsilon),
+            np.log10(np.sqrt(2.0) * k_max + epsilon),
             n_psbins_perp + 1,
         )
         # maximal par mode will be k_max
-        k_bins_par = jnp.logspace(
-            jnp.log10(k_min - epsilon), jnp.log10(k_max + epsilon), n_psbins_par + 1
+        k_bins_par = np.logspace(
+            np.log10(k_min - epsilon), np.log10(k_max + epsilon), n_psbins_par + 1
         )
     else:
-        k_bins_perp = jnp.linspace(
+        k_bins_perp = np.linspace(
             k_min - epsilon,
-            jnp.sqrt(2.0) * k_max + epsilon,
+            np.sqrt(2.0) * k_max + epsilon,
             n_psbins_perp + 1,
         )
-        k_bins_par = jnp.linspace(k_min - epsilon, k_max + epsilon, n_psbins_par + 1)
+        k_bins_par = np.linspace(k_min - epsilon, k_max + epsilon, n_psbins_par + 1)
 
     # grid of all k_values, where k_cube[0], k_cube[1] are perp values, and k_cube[2] par values
-    k_cube = jnp.meshgrid(k, k, k)
+    k_cube = np.meshgrid(k, k, k)
     # calculating k_perp, k_par in cylindrical coordinates
-    k_cylinder = [jnp.sqrt(k_cube[0] ** 2 + k_cube[1] ** 2), jnp.abs(k_cube[2])]
+    k_cylinder = [np.sqrt(k_cube[0] ** 2 + k_cube[1] ** 2), np.abs(k_cube[2])]
     # return a bin index across flattened k_cylinder, for perp and par
-    k_perp_digits = jnp.digitize(k_cylinder[0].flatten(), k_bins_perp)
-    k_par_digits = jnp.digitize(k_cylinder[1].flatten(), k_bins_par)
+    k_perp_digits = np.digitize(k_cylinder[0].flatten(), k_bins_perp)
+    k_par_digits = np.digitize(k_cylinder[1].flatten(), k_bins_par)
     # construct a unique digit counter for a 2D PS array
     # for first k_perp uses range [1, n_psbins_par]
     # for second k_perp uses range [n_psbins_par + 1, 2 * n_psbins_par] etc.
     k_cylinder_digits = (k_perp_digits - 1) * n_psbins_par + k_par_digits
     # now cut out outsiders: zeros, n_psbins_par + 1, n_psbins_perp + 1
-    k_cylinder_digits = jnp.where(
-        jnp.logical_or(k_perp_digits == 0, k_par_digits == 0), 0, k_cylinder_digits
+    k_cylinder_digits = np.where(
+        np.logical_or(k_perp_digits == 0, k_par_digits == 0), 0, k_cylinder_digits
     )
-    k_cylinder_digits = jnp.where(
-        jnp.logical_or(
+    k_cylinder_digits = np.where(
+        np.logical_or(
             k_perp_digits == n_psbins_perp + 1, k_par_digits == n_psbins_par + 1
         ),
         n_psbins_perp * n_psbins_par + 1,
         k_cylinder_digits,
     )
-    k_binsum = jnp.bincount(k_cylinder_digits, length=n_psbins_par * n_psbins_perp + 2)[
-        1:-1
-    ]
+    k_binsum = np.bincount(
+        k_cylinder_digits, minlength=n_psbins_par * n_psbins_perp + 2
+    )[1:-1]
     # geometrical means for values
-    k_values_perp = jnp.sqrt(k_bins_perp[:-1] * k_bins_perp[1:])
-    k_values_par = jnp.sqrt(k_bins_par[:-1] * k_bins_par[1:])
+    k_values_perp = np.sqrt(k_bins_perp[:-1] * k_bins_perp[1:])
+    k_values_par = np.sqrt(k_bins_par[:-1] * k_bins_par[1:])
 
     lightcones = []  # all chunks that need to be computed
 
@@ -282,36 +292,45 @@ def _power_2D(
         end = i + HII_DIM
         lightcones.append(lightcone[..., start:end])
 
-    lightcones = jnp.array(lightcones, dtype=jnp.float32)
+    lightcones = np.array(lightcones, dtype=np.float32)
 
     V = (HII_DIM * cell_size) ** 3
     dV = cell_size ** 3
 
-    @jax.jit
-    @jax.vmap
     def _power(box):
-        FT = jnp.fft.fftn(box) * dV
-        PS_box = jnp.real(FT * jnp.conj(FT)) / V
+        FT = np.fft.fftn(box) * dV
+        PS_box = np.real(FT * np.conj(FT)) / V
 
+        res = {}
         # calculating average power as a bin count with PS as weights
-        p = (
-            jnp.bincount(
+        res["power"] = (
+            np.bincount(
                 k_cylinder_digits,
                 weights=PS_box.flatten(),
-                length=n_psbins_par * n_psbins_perp + 2,
+                minlength=n_psbins_par * n_psbins_perp + 2,
             )[1:-1]
             / k_binsum
         ).reshape(n_psbins_perp, n_psbins_par)
-        # calculating average square of the power, used for estimating sample variance
-        p_sq = (
-            jnp.bincount(
-                k_cylinder_digits,
-                weights=PS_box.flatten() ** 2,
-                length=n_psbins_par * n_psbins_perp + 2,
-            )[1:-1]
-            / k_binsum
-        ).reshape(n_psbins_perp, n_psbins_par)
+        if calculate_variance:
+            # calculating average square of the power, used for estimating sample variance
+            p_sq = (
+                np.bincount(
+                    k_cylinder_digits,
+                    weights=PS_box.flatten() ** 2,
+                    minlength=n_psbins_par * n_psbins_perp + 2,
+                )[1:-1]
+                / k_binsum
+            ).reshape(n_psbins_perp, n_psbins_par)
+            res["var_power"] = p_sq - res["power"] ** 2
 
-        return {"power": p, "var_power": p_sq - p ** 2}
+        return res
 
-    return _power(lightcones), k_values_perp, k_values_par
+    res = [_power(lc) for lc in lightcones]
+
+    P = {key: [] for key in res[0].keys()}
+    for r in res:
+        for key, value in r.items():
+            P[key].append(value)
+    P = {key: np.array(value, dtype=np.float32) for key, value in P.items()}
+
+    return P, k_values_perp, k_values_par
