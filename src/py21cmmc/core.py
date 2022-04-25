@@ -1220,10 +1220,6 @@ class CoreObservedLightCone(CoreLightConeModule):
         observed_brightness_temp = self.observe_lightcone(lightcone.brightness_temp)
         ctx.add("observed_brightness_temp", observed_brightness_temp)
 
-        # save additional data for likelihood noise estimation
-        ctx.add("observed_uv", self.uv)
-        ctx.add("observed_sigma", self.sigma)
-
     def observe_lightcone(self, brightness_temp):
         """Simulating telescope noise and taking UV grid into account."""
         # remove the mean of the signal
