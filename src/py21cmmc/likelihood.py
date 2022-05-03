@@ -7,7 +7,7 @@ from multiprocessing.sharedctypes import Value
 from os import path, rename
 from powerbox.tools import get_power
 from py21cmfast import wrapper as lib
-from scipy.interpolate import InterpolatedUnivariateSpline
+from scipy.interpolate import InterpolatedUnivariateSpline, interp1d, interp2d
 
 from . import core
 from . import powerspectrum as ps
@@ -876,6 +876,57 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
             unwrap=True,
         )
 
+    @staticmethod
+    def spline1d(k, d, remove_nans=False):
+        """1D spline."""
+        if remove_nans:
+            mask = np.isnan(d)
+            k, d = k[~mask], d[~mask]
+        return interp1d(x=k, y=d, kind="cubic", fill_value="extrapolate")
+
+    @staticmethod
+    def spline2d(k_par, k_perp, d, remove_nans=False):
+        """2D spline."""
+        if remove_nans:
+            mask = np.isnan(d)
+            kk_perp, kk_par = np.meshgrid(k_perp, k_par, indexing="ij")
+            k_perp, k_par, d = kk_perp[~mask], kk_par[~mask], d[~mask]
+        return interp2d(x=k_par, y=k_perp, z=d, kind="cubic")
+
+    def iterated_spline(self, data):
+        """Splines of arbitrary data."""
+        if self.powerspectrum_dim == 1:
+            return [self.spline1d(d["k"], d["delta"], remove_nans=True) for d in data]
+        else:
+            return [
+                self.spline2d(
+                    d["k_par"],
+                    d["k_perp"],
+                    d["delta"],
+                    remove_nans=True,
+                )
+                for d in self.data
+            ]
+
+    @cached_property
+    def data_spline(self):
+        """Splines of data power spectra."""
+        if self.powerspectrum_dim == 1:
+            return [
+                self.spline1d(d["k"][~d["k_nanmask"]], d["delta"], remove_nans=False)
+                for d in self.data
+            ]
+        else:
+            return [
+                self.spline2d(
+                    d["k_par"][~d["k_par_nanmask"]],
+                    d["k_perp"][~d["k_perp_nanmask"]],
+                    d["delta"],
+                    remove_nans=False,
+                )
+                for d in self.data
+            ]
+
     def computeLikelihood(self, model):
         """Compute the likelihood given a model. Here, model uncertainty is ignored.
 
@@ -885,70 +936,38 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
             A list of dictionaries, one for each redshift. Exactly the output of
             :meth:'reduce_data`.
         """
-        total_data_mask = []
-        mu = []
-        x = []
-        # ignoring data spline
-        for i, (m, d) in enumerate(zip(model, self.data)):
-            if self.powerspectrum_dim == 1:
-                # data_mask ignores only k's outside the range
-                data_k = d["k"][~d["k_nanmask"]]
-                data_mask = np.logical_and(data_k <= self.max_k, data_k >= self.min_k)
-                # model mask ignores k's outside the range, and NaN k's seen in data
-                mask = np.logical_and(m["k"] <= self.max_k, m["k"] >= self.min_k)
-                mask = np.logical_and(mask, ~d["k_nanmask"])
-            else:
-                data_k_perp = d["k_perp"][~d["k_perp_nanmask"]]
-                data_k_par = d["k_par"][~d["k_par_nanmask"]]
-                data_mask_perp = np.logical_and(
-                    data_k_perp <= self.max_k, data_k_perp >= self.min_k
-                )
-                data_mask_par = np.logical_and(
-                    data_k_par <= self.max_k, data_k_par >= self.min_k
-                )
-                data_mask = np.einsum("i,j->ij", data_mask_perp, data_mask_par)
+        if self.powerspectrum_dim == 1:
+            k = self.noise[0]["k"][~self.noise[0]["k_nanmask"]]
+            k_mask = np.logical_and(k <= self.max_k, k >= self.min_k)
 
-                mask_perp = np.logical_and(
-                    m["k_perp"] <= self.max_k, m["k_perp"] >= self.min_k
-                )
-                mask_perp = np.logical_and(mask_perp, ~d["k_perp_nanmask"])
-                mask_par = np.logical_and(
-                    m["k_par"] <= self.max_k, m["k_par"] >= self.min_k
-                )
-                mask_par = np.logical_and(mask_par, ~d["k_par_nanmask"])
-                mask = np.einsum("i,j->ij", mask_perp, mask_par)
+            mu = [s(k) for s in self.data_spline]
+            x = [s(k) for s in self.iterate_spline(model)]
+            for mm, xx in zip(mu, x):
+                mm[k_mask] = 0.0
+                xx[k_mask] = 0.0
+        else:
+            k_par = self.noise[0]["k_par"][~self.noise[0]["k_par_nanmask"]]
+            k_perp = self.noise[0]["k_perp"][~self.noise[0]["k_perp_nanmask"]]
+            k_par_mask = np.logical_and(k_par <= self.max_k, k_par >= self.min_k)
+            k_perp_mask = np.logical_and(k_perp <= self.max_k, k_perp >= self.min_k)
+            k_mask = np.einsum("i,j->ij", k_perp_mask, k_par_mask)
 
-            # ignoring NaN bins
-            x.append(m["delta"][mask])
-            mu.append(d["delta"][data_mask])
-            total_data_mask.append(data_mask)
+            mu = [s(k_par, k_perp) for s in self.data_spline]
+            x = [s(k_par, k_perp) for s in self.iterate_spline(model)]
+            for mm, xx in zip(mu, x):
+                mm[k_mask] = 0.0
+                xx[k_mask] = 0.0
+                mm = mm.flatten()
+                xx = xx.flatten()
 
-        # ignoring the noise spline
-        total_data_mask = np.stack(total_data_mask, axis=0)
-        total_data_mask = total_data_mask.flatten()
-        good_data_points = np.sum(total_data_mask)
         mu = np.concatenate(mu, axis=0)
         x = np.concatenate(x, axis=0)
 
-        # final cleaning, just in case
-        nans = np.logical_or(np.isnan(mu), np.isnan(x))
-        mu[nans] = 0.0
-        x[nans] = 0.0
-
-        if len(mu) != len(x):
-            raise ValueError(
-                f"Something went wrong in NaN cleaning. Data vector is of size {len(mu)} "
-                f"and current model vector of size {len(x)}."
-            )
         if self.full_covariance:
-            # making a mask for the covariance matrix
-            total_data_mask = np.einsum("i,j->ij", total_data_mask, total_data_mask)
-            sigma_inv = self.noise[0]["errs_inv"][total_data_mask].reshape(
-                good_data_points, good_data_points
-            )
+            sigma_inv = self.noise[0]["errs_inv"]
             if len(sigma_inv) != len(x):
                 raise ValueError(
-                    f"Something went wrong in NaN cleaning. Covariance is of size {sigma_inv.shape} "
+                    f"Something went wrong. Covariance is of size {sigma_inv.shape} "
                     f"and current model vector of size {len(x)}."
                 )
             delta = x - mu
@@ -960,10 +979,10 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
                 lnl = -0.5 * distance
 
         else:
-            sigma_inv = self.noise[0]["errs_inv"][total_data_mask]
+            sigma_inv = self.noise[0]["errs_inv"]
             if len(sigma_inv) != len(x):
                 raise ValueError(
-                    f"Something went wrong in NaN cleaning. Covariance is of size {len(sigma_inv)} "
+                    f"Something went wrong. Covariance is of size {len(sigma_inv)} "
                     f"and current model vector of size {len(x)}."
                 )
             delta = x - mu

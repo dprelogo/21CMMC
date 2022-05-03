@@ -1185,9 +1185,7 @@ class CoreObservedLightCone(CoreLightConeModule):
 
     def build_model_data(self, ctx):
         """Compute all data defined by this core and add it to the context."""
-        if ctx.contains("lightcone") and hasattr(
-            ctx.get("lightcone"), "brightness_temp"
-        ):
+        if ctx.contains("lightcone"):
             lightcone = ctx.get("lightcone")
         else:
             logger.info(
