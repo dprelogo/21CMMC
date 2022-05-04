@@ -702,10 +702,9 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
         Either to use a full covariance in the likelihood or not.
         If `False`, uses only diagonal covariance approximation.
     likelihood_sample_correction: bool, optional
-        For the case of `full_covariance is True`, corrects Gaussian likelihood
-        for the fact that calculated covariance matrix of the data is not exact,
-        but just a sample from the distribution of actual covariance.
-        Ignored if `full_covariance is False`.
+        Corrects Gaussian likelihood for the fact that
+        the calculated covariance matrix (variance) of the data is not exact,
+        but just a sample from the distribution of actual covariance (variance).
     """
 
     required_cores = (core.CoreObservedLightCone,)
@@ -986,7 +985,11 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
                     f"and current model vector of size {len(x)}."
                 )
             delta = x - mu
-            lnl = -0.5 * np.einsum("i,i,i", delta, sigma_inv, delta)
+            if self.likelihood_sample_correction:
+                N = self.noise[0]["N"]
+                lnl = np.sum(-N / 2 * np.log(1 + delta ** 2 * sigma_inv / (N - 1)))
+            else:
+                lnl = -0.5 * np.einsum("i,i,i", delta, sigma_inv, delta)
 
         logger.debug("Likelihood computed: {lnl}".format(lnl=lnl))
 
