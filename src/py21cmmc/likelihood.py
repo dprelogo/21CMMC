@@ -892,7 +892,7 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
             k_perp, k_par, d = kk_perp[~mask], kk_par[~mask], d[~mask]
         return interp2d(x=k_par, y=k_perp, z=d, kind="cubic")
 
-    def iterated_spline(self, data):
+    def iterate_spline(self, data):
         """Splines of arbitrary data."""
         if self.powerspectrum_dim == 1:
             return [self.spline1d(d["k"], d["delta"], remove_nans=True) for d in data]
