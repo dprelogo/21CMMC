@@ -537,8 +537,12 @@ class Params(_util.Params):
 class LikelihoodComputationChain(_Chain):
     """Feature-laden replacement of :class:`cosmoHammer.LikelihoodComputationChain`."""
 
-    def __init__(self, params, *args, **kwargs):
+    def __init__(self, params, likelihood_error_constant, *args, **kwargs):
         self.params = params
+        if likelihood_error_constant is None:
+            self.likelihood_error_constant = -np.inf
+        else:
+            self.likelihood_error_constant = likelihood_error_constant
         self._setup = False  # flag to say if this chain has been setup yet.
 
         super().__init__(
@@ -682,7 +686,7 @@ class LikelihoodComputationChain(_Chain):
         try:
             return super().__call__(p)
         except ParameterError:
-            return -1e300, []
+            return self.likelihood_error_constant, []
 
     def createChainContext(self, p=None):
         """Returns a new instance of a chain context."""
