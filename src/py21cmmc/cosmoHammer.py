@@ -682,7 +682,7 @@ class LikelihoodComputationChain(_Chain):
         try:
             return super().__call__(p)
         except ParameterError:
-            return -np.inf, []
+            return -1e300, []
 
     def createChainContext(self, p=None):
         """Returns a new instance of a chain context."""
