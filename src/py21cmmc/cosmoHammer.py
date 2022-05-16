@@ -539,10 +539,7 @@ class LikelihoodComputationChain(_Chain):
 
     def __init__(self, params, likelihood_error_constant, *args, **kwargs):
         self.params = params
-        if likelihood_error_constant is None:
-            self.likelihood_error_constant = -np.inf
-        else:
-            self.likelihood_error_constant = likelihood_error_constant
+        self.likelihood_error_constant = likelihood_error_constant
         self._setup = False  # flag to say if this chain has been setup yet.
 
         super().__init__(

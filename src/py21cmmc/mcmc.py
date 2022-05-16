@@ -1,5 +1,6 @@
 """High-level functions for running MCMC chains."""
 import logging
+import numpy as np
 from concurrent.futures import ProcessPoolExecutor
 from os import mkdir, path
 from py21cmfast import yaml
@@ -109,8 +110,8 @@ def run_mcmc(
     use_multinest : bool, optional
         If true, use the MultiNest sampler instead.
     likelihood_error_constant : float, optional
-        Constant to which log-likelihood should be set in the case of error in
-        21cmFAST computation. Deafults to `-np.inf`.
+        Constant to which log-likelihood should be set in the case of error in 21cmFAST computation.
+        Deafults to `-np.inf` for `emcee` and `0.99 * np.nan_to_num(-np.inf)` for MultiNest.
 
     Other Parameters
     ----------------
@@ -169,9 +170,15 @@ def run_mcmc(
     if not isinstance(params, Params):
         params = Params(*[(k, v) for k, v in params.items()])
 
+    # setup likelihood_error_constant
     if isinstance(likelihood_error_constant, int):
         likelihood_error_constant = float(likelihood_error_constant)
-    if likelihood_error_constant is not None and (
+    if likelihood_error_constant is None:
+        if use_multinest:
+            likelihood_error_constant = 0.99 * np.nan_to_num(-np.inf)
+        else:
+            likelihood_error_constant = -np.inf
+    if (
         not isinstance(likelihood_error_constant, float)
         or likelihood_error_constant > 0.0
     ):
