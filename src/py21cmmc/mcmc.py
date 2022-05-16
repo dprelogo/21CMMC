@@ -34,8 +34,7 @@ def build_computation_chain(
         A list of objects which define the necessary methods to be likelihood modules (see
         :mod:`~py21cmmc.likelihood`)
     likelihood_error_constant : float, optional
-        Constant to which log-likelihood should be set in the case of error in
-        21cmFAST computation. Deafults to `-np.inf`.
+        Constant to which log-likelihood should be set in the case of error in 21cmFAST computation.
     params : :class:`~py21cmmc.cosmoHammer.Params`, optional
         If provided, parameters which will be sampled by the chain.
 
