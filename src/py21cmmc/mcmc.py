@@ -18,7 +18,7 @@ logger = logging.getLogger("21cmFAST")
 def build_computation_chain(
     core_modules,
     likelihood_modules,
-    likelihood_error_constant=None,
+    likelihood_error_constant,
     params=None,
     setup=True,
 ):
@@ -33,7 +33,7 @@ def build_computation_chain(
     likelihood_modules : list
         A list of objects which define the necessary methods to be likelihood modules (see
         :mod:`~py21cmmc.likelihood`)
-    likelihood_error_constant : float, optional
+    likelihood_error_constant : float
         Constant to which log-likelihood should be set in the case of error in 21cmFAST computation.
     params : :class:`~py21cmmc.cosmoHammer.Params`, optional
         If provided, parameters which will be sampled by the chain.
