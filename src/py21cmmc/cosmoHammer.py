@@ -683,6 +683,7 @@ class LikelihoodComputationChain(_Chain):
         try:
             return super().__call__(p)
         except ParameterError:
+            print(f"Parameter error raised, returning {self.likelihood_error_constant}")
             return self.likelihood_error_constant, []
 
     def createChainContext(self, p=None):
