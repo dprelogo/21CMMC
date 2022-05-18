@@ -11,6 +11,7 @@ from cosmoHammer import CosmoHammerSampler as _CosmoHammerSampler
 from cosmoHammer import getLogger
 from cosmoHammer import util as _util
 from cosmoHammer.ChainContext import ChainContext
+from cosmoHammer.exceptions import LikelihoodComputationException
 from cosmoHammer.LikelihoodComputationChain import LikelihoodComputationChain as _Chain
 from py21cmfast._utils import ParameterError
 
@@ -684,11 +685,10 @@ class LikelihoodComputationChain(_Chain):
         gc.collect(2)
 
         try:
-            lnl = super()._call__(p)
-        except ParameterError:
+            return super()._call__(p)
+        except LikelihoodComputationException:
             print(f"Parameter error raised, returning {self.likelihood_error_constant}")
-            lnl = (self.likelihood_error_constant, [])
-        return lnl
+            return self.likelihood_error_constant, []
 
     def createChainContext(self, p=None):
         """Returns a new instance of a chain context."""
