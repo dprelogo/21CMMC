@@ -684,10 +684,12 @@ class LikelihoodComputationChain(_Chain):
         gc.collect(2)
 
         try:
-            return super().__call__(p)
+            lnl = super()._call__(p)
+            return
         except ParameterError:
             print(f"Parameter error raised, returning {self.likelihood_error_constant}")
-            return self.likelihood_error_constant, []
+            lnl = (self.likelihood_error_constant, [])
+        return lnl
 
     def createChainContext(self, p=None):
         """Returns a new instance of a chain context."""
