@@ -546,6 +546,9 @@ class LikelihoodComputationChain(_Chain):
             min=params[:, 1] if params is not None else None,
             max=params[:, 2] if params is not None else None,
         )
+        print(
+            f"Defining likelihood computation chain. Error constant: {self.likelihood_error_constant}"
+        )
 
     def build_model_data(self, p=None):
         """
