@@ -685,7 +685,6 @@ class LikelihoodComputationChain(_Chain):
 
         try:
             lnl = super()._call__(p)
-            return
         except ParameterError:
             print(f"Parameter error raised, returning {self.likelihood_error_constant}")
             lnl = (self.likelihood_error_constant, [])
