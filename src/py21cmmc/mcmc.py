@@ -240,11 +240,7 @@ Likelihood {} was defined to re-simulate data/noise, but this is incompatible wi
             inp = [
                 params[i][1] + p[i] * (params[i][2] - params[i][1]) for i in range(ndim)
             ]
-            return chain.computeLikelihoods(
-                chain.build_model_data(
-                    Params(*[(k, v) for k, v in zip(params.keys, inp)])
-                )
-            )
+            return chain(inp)
 
         def prior(p, ndim, nparams):
             p = [
