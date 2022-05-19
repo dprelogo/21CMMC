@@ -684,11 +684,7 @@ class LikelihoodComputationChain(_Chain):
         # refs that are in the this chain.
         gc.collect(2)
 
-        try:
-            return super()._call__(p)
-        except LikelihoodComputationException:
-            print(f"Parameter error raised, returning {self.likelihood_error_constant}")
-            return self.likelihood_error_constant, []
+        return super()._call__(p)
 
     def createChainContext(self, p=None):
         """Returns a new instance of a chain context."""
