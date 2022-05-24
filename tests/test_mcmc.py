@@ -5,6 +5,7 @@ import numpy as np
 import os
 from pathlib import Path
 from py21cmfast import LightCone
+from scipy.stats import multivariate_normal
 
 import py21cmmc as mcmc
 from py21cmmc.cosmoHammer import (
@@ -13,6 +14,7 @@ from py21cmmc.cosmoHammer import (
     LikelihoodComputationChain,
     Params,
 )
+from py21cmmc.prior import PriorFunction
 
 
 @pytest.fixture(scope="module")
@@ -53,6 +55,14 @@ def likelihood_lc(tmpdirec: Path):
 @pytest.fixture(scope="module")
 def default_params():
     return {"HII_EFF_FACTOR": [30.0, 10.0, 50.0, 3.0], "ION_Tvir_MIN": [4.7, 2, 8, 0.1]}
+
+
+@pytest.fixture(scope="module")
+def prior_f(default_params):
+    mean = np.array([v[0] for k, v in default_params.items()])
+    cov = np.array([v[-1] ** 2 for k, v in default_params.items()])
+    cov = np.diag(cov)
+    return multivariate_normal(mean, cov).logpdf
 
 
 def test_core_coeval_not_setup():
@@ -167,6 +177,37 @@ def test_mcmc(core, likelihood_coeval, default_params, tmpdirec):
 
     samples_from_chain = mcmc.get_samples(chain)
     samples_from_file = mcmc.get_samples(tmpdirec / "TEST")
+
+    # make sure reading from file is the same as the chain.
+    assert samples_from_chain.iteration == samples_from_file.iteration
+    assert np.all(samples_from_file.accepted == samples_from_chain.accepted)
+    assert np.all(samples_from_file.get_chain() == samples_from_chain.get_chain())
+
+    assert all(
+        c in ["HII_EFF_FACTOR", "ION_Tvir_MIN"] for c in samples_from_chain.param_names
+    )
+    assert samples_from_chain.has_blobs
+    assert samples_from_chain.param_guess["HII_EFF_FACTOR"] == 30.0
+    assert samples_from_chain.param_guess["ION_Tvir_MIN"] == 4.7
+
+
+def test_mcmc_prior(core, likelihood_coeval, default_params, tmpdirec, prior_f):
+    prior = PriorFunction(arg_names=["HII_EFF_FACTOR", "ION_Tvir_MIN"], f=prior_f)
+    chain = mcmc.run_mcmc(
+        core,
+        [prior, likelihood_coeval],
+        model_name="TESTPRIOR",
+        continue_sampling=False,
+        datadir=str(tmpdirec),
+        params=default_params,
+        walkersRatio=2,
+        burninIterations=0,
+        sampleIterations=2,
+        threadCount=1,
+    )
+
+    samples_from_chain = mcmc.get_samples(chain)
+    samples_from_file = mcmc.get_samples(tmpdirec / "TESTPRIOR")
 
     # make sure reading from file is the same as the chain.
     assert samples_from_chain.iteration == samples_from_file.iteration

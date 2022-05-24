@@ -24,7 +24,7 @@ class PriorBase(likelihood.LikelihoodBase):
 
         Parameters
         ----------
-        arg_values : dict
+        arg_values : list
             A list containing all model-dependent quantities required to calculate
             the prior. Explicitly, matches the output of :meth:`~reduce_data`.
 
