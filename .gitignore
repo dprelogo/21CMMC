@@ -41,3 +41,6 @@ pip-wheel-metadata/
 src/21CMMC.egg-info/
 devel/*.out
 .vscode/
+
+./*.txt
+./*.ipynb
