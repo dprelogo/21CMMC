@@ -19,7 +19,6 @@ logger = logging.getLogger("21cmFAST")
 def build_computation_chain(
     core_modules,
     likelihood_modules,
-    likelihood_error_constant,
     params=None,
     setup=True,
 ):
@@ -34,8 +33,6 @@ def build_computation_chain(
     likelihood_modules : list
         A list of objects which define the necessary methods to be likelihood modules (see
         :mod:`~py21cmmc.likelihood`)
-    likelihood_error_constant : float
-        Constant to which log-likelihood should be set in the case of error in 21cmFAST computation.
     params : :class:`~py21cmmc.cosmoHammer.Params`, optional
         If provided, parameters which will be sampled by the chain.
 
@@ -49,7 +46,7 @@ def build_computation_chain(
     if not hasattr(likelihood_modules, "__len__"):
         likelihood_modules = [likelihood_modules]
 
-    chain = LikelihoodComputationChain(params, likelihood_error_constant)
+    chain = LikelihoodComputationChain(params)
 
     for cm in core_modules:
         chain.addCoreModule(cm)
@@ -73,7 +70,6 @@ def run_mcmc(
     log_level_21CMMC=None,
     sampler_cls=CosmoHammerSampler,
     use_multinest=False,
-    likelihood_error_constant=None,
     **mcmc_options,
 ) -> CosmoHammerSampler:
     r"""Run an MCMC chain.
@@ -109,9 +105,6 @@ def run_mcmc(
         The logging level of the cosmoHammer log file.
     use_multinest : bool, optional
         If true, use the MultiNest sampler instead.
-    likelihood_error_constant : float, optional
-        Constant to which log-likelihood should be set in the case of error in 21cmFAST computation.
-        Deafults to `-np.inf` for `emcee` and `0.99 * np.nan_to_num(-np.inf)` for MultiNest.
 
     Other Parameters
     ----------------
@@ -170,24 +163,8 @@ def run_mcmc(
     if not isinstance(params, Params):
         params = Params(*[(k, v) for k, v in params.items()])
 
-    # setup likelihood_error_constant
-    if isinstance(likelihood_error_constant, int):
-        likelihood_error_constant = float(likelihood_error_constant)
-    if likelihood_error_constant is None:
-        if use_multinest:
-            likelihood_error_constant = 0.99 * np.nan_to_num(-np.inf)
-        else:
-            likelihood_error_constant = -np.inf
-    if (
-        not isinstance(likelihood_error_constant, float)
-        or likelihood_error_constant > 0.0
-    ):
-        raise ValueError(
-            "`likelihood_error_constant` should be a largely negative `float` or `-np.inf`."
-        )
-
     chain = build_computation_chain(
-        core_modules, likelihood_modules, likelihood_error_constant, params, setup=False
+        core_modules, likelihood_modules, params, setup=False
     )
 
     if continue_sampling and not use_multinest:
