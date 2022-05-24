@@ -75,10 +75,15 @@ def test_whitener(chain):
     with pytest.raises(ValueError):
         DataWhitener("bla").fit(chain)
 
-    samples = [np.array([0.0, 0.0]), np.array([[0.0, 0.0], [1.0, 1.0]])]
+    samples = [
+        np.array([0.0, 0.0]),
+        np.array([[0.0, 0.0], [1.0, 1.0]]),
+        np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]]),
+    ]
     for sample in samples:
         whiten_unwhiten_res = [
             dw[algo].unwhiten(dw[algo].whiten(sample)) for algo in algorithms
         ]
         for res in whiten_unwhiten_res:
+            assert sample.shape == res.shape
             assert np.allclose(whiten_unwhiten_res[0], res)
