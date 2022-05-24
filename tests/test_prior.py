@@ -36,7 +36,6 @@ def f(astro_params):
 
 def test_prior_base():
     prior = PriorBase()
-    assert prior.computePrior == prior.computeLikelihood
     with pytest.raises(NotImplementedError):
         prior.computePrior([0.0, 0.0])
 
@@ -48,6 +47,7 @@ def test_prior_function(f, astro_params):
 
     prior = PriorFunction(arg_names=astro_params.keys, f=f)
     prior.computePrior([0.0, 0.0])
+    assert isclose(prior.computePrior([0.0, 0.0]), prior.computeLikelihood([0.0, 0.0]))
 
 
 def test_prior_gaussian_kde(chain, astro_params, f):

@@ -13,14 +13,8 @@ logger = logging.getLogger("21cmFAST")
 class PriorBase(likelihood.LikelihoodBase):
     """Base prior class."""
 
-    def __init__(self):
-        super().__init__()
-
-        self.computeLikelihood = self.computePrior
-
     def computePrior(self, arg_values):
-        """
-        Calculate the log-prior of the instance data given the model.
+        """Calculate the log-prior of the instance data given the model.
 
         Parameters
         ----------
@@ -34,6 +28,13 @@ class PriorBase(likelihood.LikelihoodBase):
             Logarithm of the prior.
         """
         raise NotImplementedError("The Base prior should never be used directly!")
+
+    def computeLikelihood(self, arg_values):
+        """Wrapping prior to likelihood computiation.
+
+        This is needed for the compatibility with the rest of the code.
+        """
+        return self.computePrior(arg_values)
 
 
 class PriorFunction(PriorBase):
