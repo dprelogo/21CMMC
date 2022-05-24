@@ -58,7 +58,7 @@ class PriorFunction(PriorBase):
     def computePrior(self, arg_values):
         """Calling the prior function."""
         if self.f is None:
-            raise NotImplementedError("The Base prior should never be used directly!")
+            raise ValueError("Prior function is not defined.")
         else:
             return self.f(arg_values)
 
