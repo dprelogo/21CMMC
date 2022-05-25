@@ -758,15 +758,12 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
         Sx, Sy, Sz = data.shape
         Nx, Ny, Nz = kernel
 
-        return (
-            np.einsum(
-                "ijklmn->ikm",
-                data[: Sx // Nx * Nx, : Sy // Ny * Ny, : Sz // Nz * Nz].reshape(
-                    (Sx // Nx, Nx, Sy // Ny, Ny, Sz // Nz, Nz)
-                ),
-            )
-            / (Nx * Ny * Nz)
-        )
+        return np.einsum(
+            "ijklmn->ikm",
+            data[: Sx // Nx * Nx, : Sy // Ny * Ny, : Sz // Nz * Nz].reshape(
+                (Sx // Nx, Nx, Sy // Ny, Ny, Sz // Nz, Nz)
+            ),
+        ) / (Nx * Ny * Nz)
 
     @staticmethod
     def compute_power(
@@ -942,8 +939,8 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
             mu = [s(k) for s in self.data_spline]
             x = [s(k) for s in self.iterate_spline(model)]
             for mm, xx in zip(mu, x):
-                mm[k_mask] = 0.0
-                xx[k_mask] = 0.0
+                mm[~k_mask] = 0.0
+                xx[~k_mask] = 0.0
         else:
             k_par = self.noise[0]["k_par"][~self.noise[0]["k_par_nanmask"]]
             k_perp = self.noise[0]["k_perp"][~self.noise[0]["k_perp_nanmask"]]
@@ -954,8 +951,8 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
             mu = [s(k_par, k_perp) for s in self.data_spline]
             x = [s(k_par, k_perp) for s in self.iterate_spline(model)]
             for mm, xx in zip(mu, x):
-                mm[k_mask] = 0.0
-                xx[k_mask] = 0.0
+                mm[~k_mask] = 0.0
+                xx[~k_mask] = 0.0
                 mm = mm.flatten()
                 xx = xx.flatten()
 
@@ -987,7 +984,7 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
             delta = x - mu
             if self.likelihood_sample_correction:
                 N = self.noise[0]["N"]
-                lnl = np.sum(-N / 2 * np.log(1 + delta ** 2 * sigma_inv / (N - 1)))
+                lnl = np.sum(-N / 2 * np.log(1 + delta**2 * sigma_inv / (N - 1)))
             else:
                 lnl = -0.5 * np.einsum("i,i,i", delta, sigma_inv, delta)
 
