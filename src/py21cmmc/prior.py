@@ -171,8 +171,9 @@ class DataWhitener:
         """
         if self.algorithm is not None:
             self.μ = np.mean(X, axis=0, dtype=np.float128).astype(np.float32)
-            Σ = np.cov(X.T)
-            evals, evecs = np.linalg.eigh(Σ)
+            Σ = np.atleast_2d(np.cov(X.T))
+            if self.algorithm != "rescale":
+                evals, evecs = np.linalg.eigh(Σ)
 
             if self.algorithm == "PCA":
                 self.W = np.einsum("ij,kj->ik", np.diag(evals ** (-1 / 2)), evecs)
