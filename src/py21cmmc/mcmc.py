@@ -235,7 +235,7 @@ Likelihood {} was defined to re-simulate data/noise, but this is incompatible wi
                     p[i] = params[i][1] + p[i] * (params[i][2] - params[i][1])
             else:
                 cov_mat, mu, prior_params = gaussian_prior
-                if not all([pp in params.keys() for pp in prior_params]):
+                if not all([pp in params.keys for pp in prior_params]):
                     raise ValueError("All `prior_params` should be in `params.keys()`")
                 if cov_mat.shape != (len(mu), len(mu)) or len(mu) != len(params):
                     raise ValueError(
