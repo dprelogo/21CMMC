@@ -264,7 +264,8 @@ Likelihood {} was defined to re-simulate data/noise, but this is incompatible wi
                 for i, k in enumerate(params.keys):
                     if k in prior_params:
                         j = prior_params.index(k)
-                        p[i] = gp[j]
+                        # saving to p[i], while cutting the edges
+                        p[i] = max(min(gp[j], params[i][2]), params[i][1])
                     else:
                         p[i] = params[i][1] + p[i] * (params[i][2] - params[i][1])
 
