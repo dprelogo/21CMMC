@@ -237,11 +237,13 @@ Likelihood {} was defined to re-simulate data/noise, but this is incompatible wi
                 cov_mat, mu, prior_params = gaussian_prior
                 if not all([pp in params.keys for pp in prior_params]):
                     raise ValueError("All `prior_params` should be in `params.keys()`")
-                if cov_mat.shape != (len(mu), len(mu)) or len(mu) != len(params.keys):
+                if cov_mat.shape != (len(mu), len(mu)) or len(mu) != len(
+                    prior_params.keys
+                ):
                     raise ValueError(
                         "If pd is prior dimension, "
-                        "covariance matrix should be (pd, pd) matrix "
-                        "mean and prior_params of length (pd)."
+                        f"covariance matrix should be (pd, pd) matrix, but is {cov_mat.shape}"
+                        f"mean and prior_params of length (pd), but are {len(mu)}, {len(params.keys)}."
                     )
                 x = np.zeros(len(mu))  # vector of picked prior values
                 gp = np.zeros(len(mu))
