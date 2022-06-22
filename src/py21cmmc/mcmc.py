@@ -241,13 +241,10 @@ Likelihood {} was defined to re-simulate data/noise, but this is incompatible wi
                     raise ValueError(
                         "If pd is prior dimension, "
                         f"covariance matrix should be (pd, pd) matrix, but is {cov_mat.shape}"
-                        f"mean and prior_params of length (pd), but are {len(mu)}, {len(params.keys)}."
+                        f"mean and prior_params of length (pd), but are {len(mu)}, {len(prior_params)}."
                     )
                 x = np.zeros(len(mu))  # vector of picked prior values
-                gp = []
-                for pp, k in zip(p, params.keys):
-                    if k in prior_params:
-                        gp.append(np.copy(pp))
+                gp = [np.copy(p[params.keys.index(k)]) for k in prior_params]
                 mu_i = np.copy(mu)
                 cov_i = np.copy(np.diag(cov_mat))
                 # calculating the inverse of cond. probs
