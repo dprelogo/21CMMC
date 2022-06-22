@@ -5,6 +5,7 @@ from concurrent.futures import ProcessPoolExecutor
 from os import mkdir, path
 from py21cmfast import yaml
 from py21cmfast._utils import ParameterError
+from scipy.special import erfinv
 
 from .cosmoHammer import (
     CosmoHammerSampler,
@@ -131,6 +132,9 @@ def run_mcmc(
         whether or not to detect multi mode
     write_output : bool, optional
         write output files? This is required for analysis.
+    gaussian_prior : list, optional
+        list of [cov, mean, prior_params], where cov is a covariance matrix,
+        mean is the vector of means and prior_params is a subset of prior.keys()
 
     Returns
     -------
@@ -149,6 +153,7 @@ def run_mcmc(
         max_iter = mcmc_options.get("max_iter", 50)
         multimodal = mcmc_options.get("multimodal", True)
         write_output = mcmc_options.get("write_output", True)
+        gaussian_prior = mcmc_options.get("gaussian_prior", False)
         datadir = datadir + "/MultiNest/"
         try:
             from pymultinest import run
@@ -225,8 +230,44 @@ Likelihood {} was defined to re-simulate data/noise, but this is incompatible wi
                 return -np.inf
 
         def prior(p, ndim, nparams):
-            for i in range(ndim):
-                p[i] = params[i][1] + p[i] * (params[i][2] - params[i][1])
+            if gaussian_prior is False:
+                for i in range(ndim):
+                    p[i] = params[i][1] + p[i] * (params[i][2] - params[i][1])
+            else:
+                cov_mat, mu, prior_params = gaussian_prior
+                if not all([pp in params.keys() for pp in prior_params]):
+                    raise ValueError("All `prior_params` should be in `params.keys()`")
+                if cov_mat.shape != (len(mu), len(mu)) or len(mu) != len(params):
+                    raise ValueError(
+                        "If pd is prior dimension, "
+                        "covariance matrix should be (pd, pd) matrix "
+                        "mean and prior_params of length (pd)."
+                    )
+                x = np.zeros(len(mu))  # vector of picked prior values
+                gp = np.zeros(len(mu))
+                mu_i = np.copy(mu)
+                cov_i = np.copy(np.diag(cov_mat))
+                # calculating the inverse of cond. probs
+                for i in range(len(mu)):
+                    if i > 0:
+                        mu_i[i] += (cov_mat[:i, i] @ np.linalg.inv(cov_mat[:i, :i])) @ (
+                            x[:i] - mu[:i]
+                        )
+                        cov_i[i] = cov_i[i] - (
+                            cov_mat[:i, i] @ np.linalg.inv(cov_mat[:i, :i])
+                        ) @ (cov_mat[i, :i])
+                    gp[i] = mu_i[i] + np.sqrt(2) * np.sqrt(cov_i[i]) * erfinv(
+                        2 * p[i] - 1
+                    )
+                    x[i] = np.copy(gp[i])
+
+                # assigning gaussian probs, or flat probs, depending on the parameter
+                for i, k in enumerate(params.keys()):
+                    if k in prior_params:
+                        j = prior_params.index(k)
+                        p[i] = gp[j]
+                    else:
+                        p[i] = params[i][1] + p[i] * (params[i][2] - params[i][1])
 
         try:
             sampler = run(
