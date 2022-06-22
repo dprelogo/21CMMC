@@ -262,7 +262,7 @@ Likelihood {} was defined to re-simulate data/noise, but this is incompatible wi
                     x[i] = np.copy(gp[i])
 
                 # assigning gaussian probs, or flat probs, depending on the parameter
-                for i, k in enumerate(params.keys()):
+                for i, k in enumerate(params.keys):
                     if k in prior_params:
                         j = prior_params.index(k)
                         p[i] = gp[j]
