@@ -245,6 +245,13 @@ Likelihood {} was defined to re-simulate data/noise, but this is incompatible wi
                     )
                 x = np.zeros(len(mu))  # vector of picked prior values
                 gp = np.zeros(len(mu))
+                for i, k in enumerate(params.keys):
+                    if k in prior_params:
+                        j = prior_params.index(k)
+                        gp[j] = p[i]
+                    else:
+                        p[i] = params[i][1] + p[i] * (params[i][2] - params[i][1])
+
                 mu_i = np.copy(mu)
                 cov_i = np.copy(np.diag(cov_mat))
                 # calculating the inverse of cond. probs
@@ -257,17 +264,9 @@ Likelihood {} was defined to re-simulate data/noise, but this is incompatible wi
                             cov_mat[:i, i] @ np.linalg.inv(cov_mat[:i, :i])
                         ) @ (cov_mat[i, :i])
                     gp[i] = mu_i[i] + np.sqrt(2) * np.sqrt(cov_i[i]) * erfinv(
-                        2 * p[i] - 1
+                        2 * gp[i] - 1
                     )
                     x[i] = np.copy(gp[i])
-
-                # assigning gaussian probs, or flat probs, depending on the parameter
-                for i, k in enumerate(params.keys):
-                    if k in prior_params:
-                        j = prior_params.index(k)
-                        p[i] = gp[j]
-                    else:
-                        p[i] = params[i][1] + p[i] * (params[i][2] - params[i][1])
 
         try:
             sampler = run(
