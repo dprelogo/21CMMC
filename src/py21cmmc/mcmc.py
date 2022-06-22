@@ -244,14 +244,10 @@ Likelihood {} was defined to re-simulate data/noise, but this is incompatible wi
                         f"mean and prior_params of length (pd), but are {len(mu)}, {len(params.keys)}."
                     )
                 x = np.zeros(len(mu))  # vector of picked prior values
-                gp = np.zeros(len(mu))
-                for i, k in enumerate(params.keys):
+                gp = []
+                for pp, k in zip(p, params.keys):
                     if k in prior_params:
-                        j = prior_params.index(k)
-                        gp[j] = p[i]
-                    else:
-                        p[i] = params[i][1] + p[i] * (params[i][2] - params[i][1])
-
+                        gp.append(np.copy(pp))
                 mu_i = np.copy(mu)
                 cov_i = np.copy(np.diag(cov_mat))
                 # calculating the inverse of cond. probs
@@ -267,6 +263,13 @@ Likelihood {} was defined to re-simulate data/noise, but this is incompatible wi
                         2 * gp[i] - 1
                     )
                     x[i] = np.copy(gp[i])
+
+                for i, k in enumerate(params.keys):
+                    if k in prior_params:
+                        j = prior_params.index(k)
+                        p[i] = gp[j]
+                    else:
+                        p[i] = params[i][1] + p[i] * (params[i][2] - params[i][1])
 
         try:
             sampler = run(
