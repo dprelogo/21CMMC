@@ -4,8 +4,9 @@ import numpy as np
 from concurrent.futures import ProcessPoolExecutor
 from os import mkdir, path
 from py21cmfast import yaml
-from py21cmfast._utils import ParameterError, phi, phiinv
+from py21cmfast._utils import ParameterError
 
+from ._utils import phi, phiinv
 from .cosmoHammer import (
     CosmoHammerSampler,
     HDFStorageUtil,
