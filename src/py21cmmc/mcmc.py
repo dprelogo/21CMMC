@@ -4,8 +4,7 @@ import numpy as np
 from concurrent.futures import ProcessPoolExecutor
 from os import mkdir, path
 from py21cmfast import yaml
-from py21cmfast._utils import ParameterError
-from scipy.special import erfinv
+from py21cmfast._utils import ParameterError, phi, phiinv
 
 from .cosmoHammer import (
     CosmoHammerSampler,
@@ -245,6 +244,7 @@ Likelihood {} was defined to re-simulate data/noise, but this is incompatible wi
                     )
                 x = np.zeros(len(mu))  # vector of picked prior values
                 gp = [np.copy(p[params.keys.index(k)]) for k in prior_params]
+                limits = [params[params.keys.index(k)] for k in prior_params]
                 mu_i = np.copy(mu)
                 cov_i = np.copy(np.diag(cov_mat))
                 # calculating the inverse of cond. probs
@@ -256,8 +256,11 @@ Likelihood {} was defined to re-simulate data/noise, but this is incompatible wi
                         cov_i[i] = cov_i[i] - (
                             cov_mat[:i, i] @ np.linalg.inv(cov_mat[:i, :i])
                         ) @ (cov_mat[i, :i])
-                    gp[i] = mu_i[i] + np.sqrt(2) * np.sqrt(cov_i[i]) * erfinv(
-                        2 * gp[i] - 1
+
+                    y_min = phi((limits[i][1] - mu_i[i]) / np.sqrt(cov_i[i]))
+                    y_max = phi((limits[i][2] - mu_i[i]) / np.sqrt(cov_i[i]))
+                    gp[i] = mu_i[i] + np.sqrt(cov_i[i]) * phiinv(
+                        y_min + gp[i] * (y_max - y_min)
                     )
                     x[i] = np.copy(gp[i])
 
@@ -265,7 +268,6 @@ Likelihood {} was defined to re-simulate data/noise, but this is incompatible wi
                     if k in prior_params:
                         j = prior_params.index(k)
                         # saving p's for prior params
-                        # TODO: apply edges to it
                         p[i] = gp[j]
                     else:
                         p[i] = params[i][1] + p[i] * (params[i][2] - params[i][1])
