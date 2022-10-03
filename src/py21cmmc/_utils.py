@@ -26,4 +26,4 @@ def phi(x):
 
 def phiinv(x):
     """Inverse of the integral of the unit-variance gaussian."""
-    return erfinv(2 * x + 1)
+    return np.sqrt(2) * erfinv(2 * x - 1)
