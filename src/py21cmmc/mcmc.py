@@ -201,15 +201,16 @@ Likelihood {} was defined to re-simulate data/noise, but this is incompatible wi
 
     # Write out the parameters *before* setup.
     # TODO: not sure if this is the best idea -- should it be after setup()?
-    try:
-        with open(file_prefix + ".LCC.yml", "w") as f:
-            yaml.dump(chain, f)
-    except Exception as e:
-        logger.warning(
-            "Attempt to write out YAML file containing LikelihoodComputationChain failed. "
-            "Boldly continuing..."
-        )
-        print(e)
+    if not use_multinest:
+        try:
+            with open(file_prefix + ".LCC.yml", "w") as f:
+                yaml.dump(chain, f)
+        except Exception as e:
+            logger.warning(
+                "Attempt to write out YAML file containing LikelihoodComputationChain failed. "
+                "Boldly continuing..."
+            )
+            print(e)
 
     chain.setup()
 
