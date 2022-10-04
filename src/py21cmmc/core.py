@@ -1234,6 +1234,7 @@ class CoreObservedLightCone(CoreLightConeModule):
 
         observed_brightness_temp = self.observe_lightcone(lightcone.brightness_temp)
         ctx.add("observed_brightness_temp", observed_brightness_temp)
+        ctx.add("uv_nanmask", self.uv_mask)
 
     def observe_lightcone(self, brightness_temp):
         """Simulating telescope noise and taking UV grid into account."""

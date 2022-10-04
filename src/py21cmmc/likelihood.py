@@ -872,19 +872,38 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
         """Reduce the data in the context to a list of models (one for each redshift chunk)."""
         lightcone = ctx.get("lightcone")
         observed_brightness_temp = ctx.get("observed_brightness_temp")
+        nanmask = ctx.get("uv_nanmask")
         if self.kernel_size > 1:
             observed_brightness_temp = self.boxcar3D_smoothing(
                 observed_brightness_temp, (self.kernel_size,) * 3
             )
+            # here follows a simple patch to match nanmask for a reduced dimension
+            d = nanmask.shape[0]
+            do = observed_brightness_temp.shape[0]
+            nanmask = np.fft.ifftshift(
+                np.fft.fftshift(nanmask, axes=(0, 1))[
+                    d // 2
+                    - d // self.kernel_size // 2 : d // 2
+                    - d // self.kernel_size // 2
+                    + do,
+                    d // 2
+                    - d // self.kernel_size // 2 : d // 2
+                    - d // self.kernel_size // 2
+                    + do,
+                    self.kernel_size // 2 :: self.kernel_size,
+                ],
+                axes=(0, 1),
+            )
 
         return self.compute_power(
-            observed_brightness_temp,
-            lightcone.cell_size * self.kernel_size,
+            lc=observed_brightness_temp,
+            cell_size=lightcone.cell_size * self.kernel_size,
             dim=self.powerspectrum_dim,
             n_psbins=self.n_psbins,
             logk=self.logk,
             convert_to_delta=True,
             nchunks=self.nchunks,
+            nanmask=nanmask,
             unwrap=True,
         )
 
