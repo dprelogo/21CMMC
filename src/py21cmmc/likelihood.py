@@ -904,7 +904,7 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
             convert_to_delta=True,
             nchunks=self.nchunks,
             nanmask=nanmask,
-            unwrap=True,
+            unwrap=False,
         )
 
     @staticmethod
@@ -959,6 +959,76 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
             ]
 
     def computeLikelihood(self, model):
+        """Compute the likelihood given a model. Here, model uncertainty is ignored.
+
+        Parameters
+        ----------
+        model : the output of :meth:'reduce_data`.
+        """
+        # I'm assuming that ks for noise, data and model are the same
+        noise = self.noise[0]
+        data = self.data[0]
+        if self.powerspectrum_dim == 1:
+            # I'm assuming k is 2D: redshift + wavenumber
+            k = noise["k"]
+            k_nanmask = np.isnan(k)
+            k_mask = np.logical_and(k <= self.max_k, k >= self.min_k)
+            k_mask = np.logical_and(k_mask, ~k_nanmask)
+        else:
+            # I'm assuming k_par/k_perp is 2D: redshift + k_par/k_perp modes
+            k_par = noise["k_par"]
+            k_perp = noise["k_perp"]
+            k_par_nanmask = np.isnan(k_par)
+            k_perp_nanmask = np.isnan(k_perp)
+            k_par_mask = np.logical_and(k_par <= self.max_k, k_par >= self.min_k)
+            k_perp_mask = np.logical_and(k_perp <= self.max_k, k_perp >= self.min_k)
+            k_par_mask = np.logical_and(k_par_mask, ~k_par_nanmask)
+            k_perp_mask = np.logical_and(k_perp_mask, ~k_perp_nanmask)
+            k_mask = np.einsum("ki,kj->kij", k_perp_mask, k_par_mask).astype(bool)
+
+        x = data["delta"][k_mask]
+        mu = model["delta"][k_mask] + noise["delta"][k_mask]
+
+        if self.full_covariance:
+            sigma_inv = noise["errs_inv"]
+            if len(sigma_inv) != len(x):
+                raise ValueError(
+                    f"Something went wrong. Covariance is of size {sigma_inv.shape} "
+                    f"and current model vector of size {len(x)}."
+                )
+            delta = x - mu
+            distance = np.einsum("i,ij,j", delta, sigma_inv, delta)
+            if self.likelihood_sample_correction:
+                N = self.noise[0]["N"]
+                lnl = -N / 2 * np.log(1 + distance / (N - 1))
+            else:
+                lnl = -0.5 * distance
+
+        else:
+            sigma_inv = noise["errs_inv"]
+            if len(sigma_inv) != len(x):
+                raise ValueError(
+                    f"Something went wrong. Covariance is of size {len(sigma_inv)} "
+                    f"and current model vector of size {len(x)}."
+                )
+            delta = x - mu
+            if self.likelihood_sample_correction:
+                N = self.noise[0]["N"]
+                lnl = np.sum(-N / 2 * np.log(1 + delta**2 * sigma_inv / (N - 1)))
+            else:
+                lnl = -0.5 * np.einsum("i,i,i", delta, sigma_inv, delta)
+
+        logger.debug("Likelihood computed: {lnl}".format(lnl=lnl))
+
+        if np.isnan(lnl):
+            logger.warning(
+                "Likelihood is NaN, returning -inf, but something might be wrong."
+            )
+            return -np.inf
+        else:
+            return lnl
+
+    def _old_computeLikelihood(self, model):
         """Compute the likelihood given a model. Here, model uncertainty is ignored.
 
         Parameters
