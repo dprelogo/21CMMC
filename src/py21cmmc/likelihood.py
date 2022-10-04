@@ -3,6 +3,7 @@ import logging
 import numpy as np
 from cached_property import cached_property
 from io import IOBase
+from matplotlib.backend_bases import NonGuiException
 from multiprocessing.sharedctypes import Value
 from os import path, rename
 from powerbox.tools import get_power
@@ -767,10 +768,10 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
     @staticmethod
     def compute_power(
         lc,
-        redshifts,
         cell_size,
         dim=2,
         n_psbins=(12, 12),
+        logk=True,
         convert_to_delta=True,
         nchunks=10,
         nanmask=None,
@@ -782,8 +783,6 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
         ----------
         lc : array
             Lightcone for which powespectrum is computed.
-        redshifts: array
-            Redshifts of the lightcone
         cell_size : float
             Size of the cell in Mpc.
         dim : int, optional
@@ -791,6 +790,8 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
         n_psbins : int or tuple
             If `dim == 1` defines number of powerspectrum bins.
             If `dim == 2` defines a pair of `k_perp, k_par` powerspectrum bins.
+        logk : bool, optional
+            How to bin k space, logarithmically or linearly.
         convert_to_delta : bool, optional
             If `True`, returns non-dimensional power.
         nchunks : int
@@ -805,11 +806,15 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
             Otherwise, all powerspectrums are returned as one array.
         """
         if dim == 1:
-            PS, k, z = ps.ps1D(
-                lc,
-                cell_size,
-                n_psbins,
-                convert_to_delta,
+            PS, k = ps.ps1D(
+                lc=lc,
+                cell_size=cell_size,
+                redshifts=None,
+                n_psbins=n_psbins,
+                logk=logk,
+                convert_to_delta=convert_to_delta,
+                chunk_skip=None,
+                compute_variance=False,
                 nanmask=nanmask,
             )
             ps_chunks = len(PS)
@@ -830,13 +835,15 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
                     f"`n_psbins` should contain `n_psbins_perp` and `n_psbins_par`, but is {n_psbins}"
                 )
             n_psbins_perp, n_psbins_par = n_psbins
-            PS, k_perp, k_par, z = ps.ps2D(
-                lc,
-                redshifts,
-                cell_size,
-                n_psbins_par,
-                n_psbins_perp,
-                convert_to_delta,
+            PS, k_perp, k_par = ps.ps2D(
+                lc=lc,
+                cell_size=cell_size,
+                redshifts=None,
+                n_psbins_par=n_psbins_par,
+                n_psbins_perp=n_psbins_perp,
+                logk=logk,
+                convert_to_delta=convert_to_delta,
+                chunk_skip=None,
                 nanmask=nanmask,
             )
             ps_chunks = len(PS)
