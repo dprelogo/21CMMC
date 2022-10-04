@@ -10,6 +10,7 @@ import logging
 import numpy as np
 import py21cmfast as p21
 import warnings
+from audioop import add
 from os import path
 
 from . import _utils as ut
@@ -1158,10 +1159,12 @@ class CoreObservedLightCone(CoreLightConeModule):
 
     Parameters
     ----------
-    add_noise : bool, optional
-        Either to add a thermal noise to the lightcone or not.
-        If `False`, it removes the mean and smooths-out the lightcone by taking the observed Fourier modes only.
-        If `True`, it additionally computes a noise realization and adds it to the lightcone, for both mock and sim.
+    add_telescope_effects : int, optional
+        Defines the level of telescope effects added to the model lightcone.
+        If `-1`, does nothing.
+        If `0`, it removes the global signal from the lightcone.
+        If `1`, it removes the global signal and smooths-out the lightcone by taking the observed Fourier modes only.
+        If `2`, it additionally computes a noise realization and adds it to the lightcone. Defaults to `0`.
     uv_filepath : str, optional
         Filepath from which the UV box will be loaded. If `None`, it is pre-computed.
     sigma_filepath : str, optional
@@ -1171,14 +1174,28 @@ class CoreObservedLightCone(CoreLightConeModule):
 
     # TODO: write pre-computation of uv box and sigma
     def __init__(
-        self, *args, add_noise=True, uv_filepath=None, sigma_filepath=None, **kwargs
+        self,
+        *args,
+        add_telescope_effects=0,
+        uv_filepath=None,
+        sigma_filepath=None,
+        **kwargs,
     ):
         if uv_filepath is None or sigma_filepath is None:
             raise NotImplementedError(
                 "At the moment, the code requires UV box and noise amplitude."
             )
         super().__init__(*args, **kwargs)
-        self.add_noise = add_noise
+        if (
+            add_telescope_effects < -1
+            or add_telescope_effects > 2
+            or not isinstance(add_telescope_effects, int)
+        ):
+            raise ValueError(
+                f"`add_telescope_effects` should be an integer between `-1` and `2`, "
+                f"but is {add_telescope_effects}."
+            )
+        self.add_telescope_effects = add_telescope_effects
         self.uv = np.load(uv_filepath)  # gridded uv measurements
         self.uv_mask = self.uv < 1e-12  # contains all non-measured parts of uv grid
         self.sigma = np.load(sigma_filepath)  # noise amplitudes
@@ -1220,28 +1237,24 @@ class CoreObservedLightCone(CoreLightConeModule):
 
     def observe_lightcone(self, brightness_temp):
         """Simulating telescope noise and taking UV grid into account."""
-        # remove the mean of the signal
-        brightness_temp -= brightness_temp.mean(axis=(0, 1), keepdims=True)
-        # add noise
-        return self._add_noise(brightness_temp)
-
-    def _add_noise(self, brightness_temp):
-        """Adding telescope noise."""
-        if self.add_noise is True:
-            noise = (
-                np.random.normal(loc=0.0, scale=1.0, size=(2,) + self.uv.shape)
-                * self.sigma
-            )
-            noise = noise[0] + 1.0j * noise[1]
-            noise /= np.sqrt(self.uv)
-            noise = noise.astype(np.complex64)
-            brightness_temp = (
-                np.fft.fft2(brightness_temp, axes=(0, 1)).astype(np.complex64) + noise
-            )
-        else:
+        if self.add_telescope_effects >= 0:
+            brightness_temp -= brightness_temp.mean(axis=(0, 1), keepdims=True)
+        if self.add_telescope_effects >= 1:
             brightness_temp = np.fft.fft2(brightness_temp, axes=(0, 1)).astype(
                 np.complex64
             )
+            if self.add_telescope_effects == 2:
+                noise = (
+                    np.random.normal(loc=0.0, scale=1.0, size=(2,) + self.uv.shape)
+                    * self.sigma
+                )
+                noise = noise[0] + 1.0j * noise[1]
+                noise /= np.sqrt(self.uv)
+                noise = noise.astype(np.complex64)
+                brightness_temp += noise
 
-        brightness_temp[self.uv_mask] = 0.0
-        return np.real(np.fft.ifft2(brightness_temp, axes=(0, 1))).astype(np.float32)
+            brightness_temp[self.uv_mask] = 0.0
+            brightness_temp = np.real(
+                np.fft.ifft2(brightness_temp, axes=(0, 1))
+            ).astype(np.float32)
+        return brightness_temp
