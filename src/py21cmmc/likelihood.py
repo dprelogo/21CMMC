@@ -8,9 +8,9 @@ from os import path, rename
 from powerbox.tools import get_power
 from py21cmfast import wrapper as lib
 from scipy.interpolate import InterpolatedUnivariateSpline, interp1d, interp2d
+from summary21cm.spectra import powerspectrum as ps
 
 from . import core
-from . import powerspectrum as ps
 
 loaded_cliks = {}
 logger = logging.getLogger("21cmFAST")
@@ -724,7 +724,7 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
         if powerspectrum_dim not in [1, 2]:
             raise ValueError("Only 1D or 2D PS calculation is supported.")
         self.powerspectrum_dim = powerspectrum_dim
-        if smoothing_kernel_size < 1 or type(smoothing_kernel_size) is not int:
+        if smoothing_kernel_size < 1 or not isinstance(smoothing_kernel_size, int):
             raise ValueError("Smoothing size should be a positive integer.")
         self.kernel_size = smoothing_kernel_size
         if horizon_wedge_excision:
@@ -738,11 +738,10 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
         """Perform post-init setup."""
         LikelihoodBaseFile.setup(self)
 
-        # Ensure that there is one dataset and noiseset per redshift.
-        if len(self.data) != self.nchunks:
-            raise ValueError(
-                "There needs to be one dataset (datafile) for each chunk!!"
-            )
+        # Here data and noise contain all of the needed information.
+        # User has to make sure that loaded data is in good format.
+        if len(self.data) != 1:
+            raise ValueError("There needs to be only one dataset (datafile)!")
 
         if self.noise and len(self.noise) != 1:
             raise ValueError("There needs to be only one dataset (noisefile)!")
@@ -768,12 +767,13 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
     @staticmethod
     def compute_power(
         lc,
+        redshifts,
         cell_size,
         dim=2,
         n_psbins=(12, 12),
-        logk=True,
         convert_to_delta=True,
         nchunks=10,
+        nanmask=None,
         unwrap=True,
     ):
         """Computing 1D or 2D powerspectrum.
@@ -782,6 +782,8 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
         ----------
         lc : array
             Lightcone for which powespectrum is computed.
+        redshifts: array
+            Redshifts of the lightcone
         cell_size : float
             Size of the cell in Mpc.
         dim : int, optional
@@ -789,50 +791,28 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
         n_psbins : int or tuple
             If `dim == 1` defines number of powerspectrum bins.
             If `dim == 2` defines a pair of `k_perp, k_par` powerspectrum bins.
-        logk : bool, optional
-            Either to bin in log- or linear-space.
         convert_to_delta : bool, optional
             If `True`, returns non-dimensional power.
         nchunks : int
             Number of lightcone chunks. By default, lightcone is divided into
             equally-sized cubes and only first `nchunks` are taken into account.
+        nanmask: array
+            mask defining which parts of the lightcone (in u, v, z coordinates)
+            are measured and which are not, i.e. NaNs. Ignored in the case of `None`.
+            It should be of the same shape as the lightcone.
         unwrap : bool, optional
             If `True` it returns a list of powerspectrums for each chunk.
             Otherwise, all powerspectrums are returned as one array.
         """
         if dim == 1:
-            PS, k = ps.ps1D(
+            PS, k, z = ps.ps1D(
                 lc,
                 cell_size,
                 n_psbins,
-                logk,
                 convert_to_delta,
+                nanmask=nanmask,
             )
-            ps_chunks = len(PS["power"])
-            if ps_chunks < nchunks:
-                logger.warning(
-                    f"`nchunks` ({nchunks}) larger than computed powers ({ps_chunks})."
-                )
-                nchunks = ps_chunks
-            if unwrap:
-                data = [{"delta": ps, "k": k} for ps in PS["power"][:nchunks]]
-            else:
-                data = {"delta": PS["power"][:nchunks], "k": k}
-        else:
-            if len(n_psbins) != 2:
-                raise ValueError(
-                    f"`n_psbins` should contain `n_psbins_perp` and `n_psbins_par`, but is {n_psbins}"
-                )
-            n_psbins_perp, n_psbins_par = n_psbins
-            PS, k_perp, k_par = ps.ps2D(
-                lc,
-                cell_size,
-                n_psbins_par,
-                n_psbins_perp,
-                logk,
-                convert_to_delta,
-            )
-            ps_chunks = len(PS["power"])
+            ps_chunks = len(PS)
             if ps_chunks < nchunks:
                 logger.warning(
                     f"`nchunks` ({nchunks}) larger than computed powers ({ps_chunks})."
@@ -840,14 +820,43 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
                 nchunks = ps_chunks
             if unwrap:
                 data = [
-                    {"delta": ps, "k_perp": k_perp, "k_par": k_par}
-                    for ps in PS["power"][:nchunks]
+                    {"delta": ps, "k": ks} for ps, ks in zip(PS[:nchunks], k[:nchunks])
+                ]
+            else:
+                data = {"delta": PS[:nchunks], "k": k[:nchunks]}
+        else:
+            if len(n_psbins) != 2:
+                raise ValueError(
+                    f"`n_psbins` should contain `n_psbins_perp` and `n_psbins_par`, but is {n_psbins}"
+                )
+            n_psbins_perp, n_psbins_par = n_psbins
+            PS, k_perp, k_par, z = ps.ps2D(
+                lc,
+                redshifts,
+                cell_size,
+                n_psbins_par,
+                n_psbins_perp,
+                convert_to_delta,
+                nanmask=nanmask,
+            )
+            ps_chunks = len(PS)
+            if ps_chunks < nchunks:
+                logger.warning(
+                    f"`nchunks` ({nchunks}) larger than computed powers ({ps_chunks})."
+                )
+                nchunks = ps_chunks
+            if unwrap:
+                data = [
+                    {"delta": ps, "k_perp": kper, "k_par": kpar}
+                    for ps, kper, kpar in zip(
+                        PS[:nchunks], k_perp[:nchunks], k_par[:nchunks]
+                    )
                 ]
             else:
                 data = {
-                    "delta": PS["power"][:nchunks],
-                    "k_perp": k_perp,
-                    "k_par": k_par,
+                    "delta": PS[:nchunks],
+                    "k_perp": k_perp[:nchunks],
+                    "k_par": k_par[:nchunks],
                 }
 
         return data
