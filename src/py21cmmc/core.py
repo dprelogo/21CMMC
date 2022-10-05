@@ -1197,7 +1197,7 @@ class CoreObservedLightCone(CoreLightConeModule):
             )
         self.add_telescope_effects = add_telescope_effects
         self.uv = np.load(uv_filepath)  # gridded uv measurements
-        self.uv_mask = self.uv < 1e-12  # contains all non-measured parts of uv grid
+        self.uv_mask = self.uv > 1e-12  # contains all non-measured parts of uv grid
         self.sigma = np.load(sigma_filepath)  # noise amplitudes
 
     def build_model_data(self, ctx):
@@ -1254,7 +1254,7 @@ class CoreObservedLightCone(CoreLightConeModule):
                 noise = noise.astype(np.complex64)
                 brightness_temp += noise
 
-            brightness_temp[self.uv_mask] = 0.0
+            brightness_temp[~self.uv_mask] = 0.0
             brightness_temp = np.real(
                 np.fft.ifft2(brightness_temp, axes=(0, 1))
             ).astype(np.float32)
