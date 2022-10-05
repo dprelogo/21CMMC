@@ -1033,9 +1033,9 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
                     "Something went wrong, model nanmask should be the same as noise/data nanmask."
                 )
             # TODO: remove after implementing splines
-            if not np.all(np.isclose(model["k"], noise["k"])) or not np.all(
-                np.isclose(model["k"], data["k"])
-            ):
+            if not np.all(
+                np.isclose(model["k"][k_nanmask], noise["k"][k_nanmask])
+            ) or not np.all(np.isclose(model["k"][k_nanmask], data["k"][k_nanmask])):
                 raise ValueError(
                     "k bins are not the same. Check your data, noise and the rest of pipeline!"
                 )
@@ -1049,16 +1049,7 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
                     "Something went wrong, model nanmask should be the same as noise/data nanmask."
                 )
 
-            # TODO: remove after implementing splines
-            if (
-                not np.all(np.isclose(model["k_par"], noise["k_par"]))
-                or not np.all(np.isclose(model["k_par"], data["k_par"]))
-                or not np.all(np.isclose(model["k_perp"], noise["k_perp"]))
-                or not np.all(np.isclose(model["k_perp"], data["k_perp"]))
-            ):
-                raise ValueError(
-                    "k bins are not the same. Check your data, noise and the rest of pipeline!"
-                )
+            # TODO: check if k bins are the same, or implement spline
 
         x = data["delta"][k_nanmask]
         mu = model["delta"][k_nanmask] + noise["delta"][k_nanmask]
