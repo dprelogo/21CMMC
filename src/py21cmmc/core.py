@@ -1259,3 +1259,49 @@ class CoreObservedLightCone(CoreLightConeModule):
                 np.fft.ifft2(brightness_temp, axes=(0, 1))
             ).astype(np.float32)
         return brightness_temp
+
+
+class DummyCoreObservedLightCone(CoreLightConeModule):
+    """Dummy core for testing."""
+
+    # TODO: write pre-computation of uv box and sigma
+    def __init__(
+        self,
+        *args,
+        add_telescope_effects=0,
+        uv_filepath=None,
+        sigma_filepath=None,
+        **kwargs,
+    ):
+        if uv_filepath is None or sigma_filepath is None:
+            raise NotImplementedError(
+                "At the moment, the code requires UV box and noise amplitude."
+            )
+        super().__init__(*args, **kwargs)
+        if (
+            add_telescope_effects < -1
+            or add_telescope_effects > 2
+            or not isinstance(add_telescope_effects, int)
+        ):
+            raise ValueError(
+                f"`add_telescope_effects` should be an integer between `-1` and `2`, "
+                f"but is {add_telescope_effects}."
+            )
+        self.add_telescope_effects = add_telescope_effects
+        self.uv = np.load(uv_filepath)  # gridded uv measurements
+        self.uv_mask = self.uv < 1e-12  # contains all non-measured parts of uv grid
+        self.sigma = np.load(sigma_filepath)  # noise amplitudes
+
+    def setup(self):
+        """Setup the chain."""
+        # If the chain has different parameter truths, we want to use those for our defaults.
+        self.astro_params, self.cosmo_params = self._update_params(
+            self.chain.createChainContext().getParams()
+        )
+
+        logger.info("Initialization done.")
+
+    def build_model_data(self, ctx):
+        """Compute all data defined by this core and add it to the context."""
+        ctx.add("observed_brightness_temp", np.zeros(self.uv_mask))
+        ctx.add("uv_nanmask", self.uv_mask)
