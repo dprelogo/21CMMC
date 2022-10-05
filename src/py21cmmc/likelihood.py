@@ -713,7 +713,7 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
         but just a sample from the distribution of actual covariance (variance).
     """
 
-    required_cores = (core.DummyCoreObservedLightCone,)
+    required_cores = (core.CoreObservedLightCone,)
 
     # TODO: Implement Horizon wedge excision
     def __init__(
@@ -948,11 +948,9 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
                 ],
                 axes=(0, 1),
             )
-        # replace with lightcone.cell_size
-        print(lightcone)
         return self.compute_power(
             lc=observed_brightness_temp,
-            cell_size=1.5 * self.kernel_size,
+            cell_size=lightcone.cell_size * self.kernel_size,
             dim=self.powerspectrum_dim,
             n_psbins=self.n_psbins,
             min_k=self.min_k,
