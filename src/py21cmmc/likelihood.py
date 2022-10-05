@@ -915,7 +915,7 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
                     - d // self.kernel_size // 2 : d // 2
                     - d // self.kernel_size // 2
                     + do,
-                    self.kernel_size // 2 :: self.kernel_size,
+                    self.kernel_size - 1 :: self.kernel_size,
                 ],
                 axes=(0, 1),
             )
