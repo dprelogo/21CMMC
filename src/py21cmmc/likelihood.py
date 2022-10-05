@@ -862,11 +862,13 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
                     for nm, ps, ks in zip(k_nanmask, PS, k)
                 ]
             else:
-                data = {
-                    "nanmask": k_nanmask,
-                    "delta": PS,
-                    "k": k,
-                }
+                data = [
+                    {
+                        "nanmask": k_nanmask,
+                        "delta": PS,
+                        "k": k,
+                    }
+                ]
         else:
             if len(n_psbins) != 2:
                 raise ValueError(
@@ -909,12 +911,14 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
                     for nm, ps, kper, kpar in zip(k_nanmask, PS, k_perp, k_par)
                 ]
             else:
-                data = {
-                    "nanmask": k_nanmask,
-                    "delta": PS,
-                    "k_perp": k_perp,
-                    "k_par": k_par,
-                }
+                data = [
+                    {
+                        "nanmask": k_nanmask,
+                        "delta": PS,
+                        "k_perp": k_perp,
+                        "k_par": k_par,
+                    }
+                ]
 
         return data
 
@@ -1023,6 +1027,7 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
         # I'm assuming that ks for noise, data and model are the same
         noise = self.noise[0]
         data = self.data[0]
+        model = model[0]
         if self.powerspectrum_dim == 1:
             # I'm assuming k is 2D: redshift + wavenumber
 
