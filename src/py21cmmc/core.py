@@ -1289,7 +1289,7 @@ class DummyCoreObservedLightCone(CoreLightConeModule):
             )
         self.add_telescope_effects = add_telescope_effects
         self.uv = np.load(uv_filepath)  # gridded uv measurements
-        self.uv_mask = self.uv < 1e-12  # contains all non-measured parts of uv grid
+        self.uv_mask = self.uv > 1e-12  # contains all non-measured parts of uv grid
         self.sigma = np.load(sigma_filepath)  # noise amplitudes
 
     def setup(self):
