@@ -204,7 +204,7 @@ Likelihood {} was defined to re-simulate data/noise, but this is incompatible wi
 
     # Write out the parameters *before* setup.
     # TODO: not sure if this is the best idea -- should it be after setup()?
-    if not use_multinest and not create_yaml:
+    if not use_multinest and create_yaml:
         try:
             with open(file_prefix + ".LCC.yml", "w") as f:
                 yaml.dump(chain, f)
