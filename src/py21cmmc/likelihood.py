@@ -1068,7 +1068,11 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
             sigma = sigma[
                 np.einsum("i,j->ij", k_nanmask.flatten(), k_nanmask.flatten())
             ].reshape(k_nanmask.sum(), k_nanmask.sum())
-            sigma_inv = pinvh(sigma)
+            # instead of calculating inverse of sigma directly,
+            # it is more stable to scale it to the correlation matrix and rescale it back
+            stddev = np.sqrt(np.diag(sigma))
+            stddev_outer = np.einsum("i,j->ij", stddev, stddev)
+            sigma_inv = pinvh(sigma / stddev_outer) / stddev_outer
             if len(sigma_inv) != len(x):
                 raise ValueError(
                     f"Something went wrong. Covariance is of size {sigma_inv.shape} "
