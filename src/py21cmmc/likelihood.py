@@ -713,7 +713,7 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
         but just a sample from the distribution of actual covariance (variance).
     """
 
-    required_cores = (core.CoreObservedLightCone,)
+    required_cores = (core.DummyCoreObservedLightCone,)
 
     # TODO: Implement Horizon wedge excision
     def __init__(
