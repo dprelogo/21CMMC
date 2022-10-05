@@ -1409,7 +1409,7 @@ class LikelihoodPlanckPowerSpectra(LikelihoodBase):
                 my_l_max_EE = max(my_clik_EE.get_lmax())
             else:
                 raise AttributeError(
-                    "I did not understand name %s"(name)
+                    "I did not understand name %s" % (name)
                     + "please choose between"
                     + "Planck_lensing, Planck_highl_TTTEEE, Planck_lowl_EE"
                 )
