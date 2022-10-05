@@ -71,6 +71,7 @@ def run_mcmc(
     log_level_21CMMC=None,
     sampler_cls=CosmoHammerSampler,
     use_multinest=False,
+    create_yaml=True,
     **mcmc_options,
 ) -> CosmoHammerSampler:
     r"""Run an MCMC chain.
@@ -106,6 +107,8 @@ def run_mcmc(
         The logging level of the cosmoHammer log file.
     use_multinest : bool, optional
         If true, use the MultiNest sampler instead.
+    create_yaml : bool, optional
+        If true, creates yaml file of the run, otherwise it skips it.
 
     Other Parameters
     ----------------
@@ -172,7 +175,7 @@ def run_mcmc(
         core_modules, likelihood_modules, params, setup=False
     )
 
-    if continue_sampling and not use_multinest:
+    if continue_sampling and not use_multinest and create_yaml:
         try:
             with open(file_prefix + ".LCC.yml", "r") as f:
                 old_chain = yaml.load(f)
@@ -201,7 +204,7 @@ Likelihood {} was defined to re-simulate data/noise, but this is incompatible wi
 
     # Write out the parameters *before* setup.
     # TODO: not sure if this is the best idea -- should it be after setup()?
-    if not use_multinest:
+    if not use_multinest and not create_yaml:
         try:
             with open(file_prefix + ".LCC.yml", "w") as f:
                 yaml.dump(chain, f)
