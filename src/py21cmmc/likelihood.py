@@ -851,10 +851,15 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
                 nchunks = ps_chunks - skip_chunks
 
             k_nanmask = ~np.isnan(k)
+            print("\n\n\nNANS\n", k_nanmask)
             k_nanmask = np.logical_and(k_nanmask, k <= max_k)
+            print("\n\n\nMAX K\n", k_nanmask)
             k_nanmask = np.logical_and(k_nanmask, k >= min_k)
+            print("\n\n\nMIN K\n", k_nanmask)
             k_nanmask[:skip_chunks] = False
+            print(f"\n\n\nSKIP CHUNKS: {skip_chunks}\n", k_nanmask)
             k_nanmask[skip_chunks + nchunks :] = False
+            print(f"\n\n\nSKIP CHUNKS + NCHUNKS: {skip_chunks + nchunks}\n", k_nanmask)
 
             if unwrap:
                 data = [
