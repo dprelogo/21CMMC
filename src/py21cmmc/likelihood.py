@@ -10,7 +10,7 @@ from powerbox.tools import get_power
 from py21cmfast import wrapper as lib
 from scipy.interpolate import InterpolatedUnivariateSpline, interp1d, interp2d
 from scipy.linalg import pinvh
-from summary21cm.spectra import powerspectrum as ps
+from summary21cm.spectra.numpy import powerspectrum as ps
 
 from . import core
 
