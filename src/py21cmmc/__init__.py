@@ -9,6 +9,7 @@ from .core import (
     CoreLightConeModule,
     CoreLuminosityFunction,
     CoreObservedLightCone,
+    DummyCoreObservedLightCone,
     NotAChain,
     NotSetupError,
 )
