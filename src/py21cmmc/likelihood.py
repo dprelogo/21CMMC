@@ -9,6 +9,7 @@ from os import path, rename
 from powerbox.tools import get_power
 from py21cmfast import wrapper as lib
 from scipy.interpolate import InterpolatedUnivariateSpline, interp1d, interp2d
+from scipy.linalg import pinvh
 from summary21cm.spectra import powerspectrum as ps
 
 from . import core
@@ -779,11 +780,13 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
         cell_size,
         dim=2,
         n_psbins=(12, 12),
+        min_k=0.0,
+        max_k=1.0,
         logk=True,
         convert_to_delta=True,
         nchunks=10,
         skip_chunks=0,
-        nanmask=None,
+        uv_nanmask=None,
         unwrap=True,
     ):
         """Computing 1D or 2D powerspectrum.
@@ -799,6 +802,12 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
         n_psbins : int or tuple
             If `dim == 1` defines number of powerspectrum bins.
             If `dim == 2` defines a pair of `k_perp, k_par` powerspectrum bins.
+        min_k : float
+            Defining the minimum k mode taken into account. Used only to form
+            a nanmask which is later used to zero-out relevant modes.
+        max_k : float
+            Defining the maximum k mode taken into account. Used only to form
+            a nanmask which is later used to zero-out relevant modes.
         logk : bool, optional
             How to bin k space, logarithmically or linearly.
         convert_to_delta : bool, optional
@@ -811,7 +820,7 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
             Number of lightcone chunks for lower redshifts excluded from the calculation.
             For exmple, for a list of `chunks`, only `chunks[skip_chunks:nchunks + skip_chunks]`
             will be taken into account.
-        nanmask: array
+        uv_nanmask: array
             mask defining which parts of the lightcone (in u, v, z coordinates)
             are measured and which are not, i.e. NaNs. Ignored in the case of `None`.
             It should be of the same shape as the lightcone.
@@ -829,8 +838,10 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
                 convert_to_delta=convert_to_delta,
                 chunk_skip=None,
                 compute_variance=False,
-                nanmask=nanmask,
+                nanmask=uv_nanmask,
             )
+            PS = np.array(PS, dtype=np.float32)
+            k = np.array(k, dtype=np.float32)
             ps_chunks = len(PS)
             if ps_chunks < nchunks + skip_chunks:
                 logger.warning(
@@ -838,18 +849,23 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
                     f"larger than computed powers ({ps_chunks})."
                 )
                 nchunks = ps_chunks - skip_chunks
+
+            k_nanmask = ~np.isnan(k)
+            k_nanmask = np.logical_and(k_nanmask, k <= max_k)
+            k_nanmask = np.logical_and(k_nanmask, k >= min_k)
+            k_nanmask[:skip_chunks] = False
+            k_nanmask[skip_chunks + nchunks :] = False
+
             if unwrap:
                 data = [
-                    {"delta": ps, "k": ks}
-                    for ps, ks in zip(
-                        PS[skip_chunks : skip_chunks + nchunks],
-                        k[skip_chunks : skip_chunks + nchunks],
-                    )
+                    {"nanmask": nm, "delta": ps, "k": ks}
+                    for nm, ps, ks in zip(k_nanmask, PS, k)
                 ]
             else:
                 data = {
-                    "delta": PS[skip_chunks : skip_chunks + nchunks],
-                    "k": k[skip_chunks : skip_chunks + nchunks],
+                    "nanmask": k_nanmask,
+                    "delta": PS,
+                    "k": k,
                 }
         else:
             if len(n_psbins) != 2:
@@ -866,8 +882,11 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
                 logk=logk,
                 convert_to_delta=convert_to_delta,
                 chunk_skip=None,
-                nanmask=nanmask,
+                nanmask=uv_nanmask,
             )
+            PS = np.array(PS, dtype=np.float32)
+            k_perp = np.array(k_perp, dtype=np.float32)
+            k_par = np.array(k_par, dtype=np.float32)
             ps_chunks = len(PS)
             if ps_chunks < nchunks + skip_chunks:
                 logger.warning(
@@ -875,20 +894,26 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
                     f"larger than computed powers ({ps_chunks})."
                 )
                 nchunks = ps_chunks - skip_chunks
+
+            k_par_nanmask = ~np.isnan(k_par)
+            k_perp_nanmask = ~np.isnan(k_perp)
+            k_par_mask = np.logical_and(k_par <= max_k, k_par >= min_k)
+            k_perp_mask = np.logical_and(k_perp <= max_k, k_perp >= min_k)
+            k_par_nanmask = np.logical_and(k_par_mask, k_par_nanmask)
+            k_perp_nanmask = np.logical_and(k_perp_mask, k_perp_nanmask)
+            k_nanmask = np.einsum("ki,kj->kij", k_perp_nanmask, k_par_nanmask)
+
             if unwrap:
                 data = [
-                    {"delta": ps, "k_perp": kper, "k_par": kpar}
-                    for ps, kper, kpar in zip(
-                        PS[skip_chunks : skip_chunks + nchunks],
-                        k_perp[skip_chunks : skip_chunks + nchunks],
-                        k_par[skip_chunks : skip_chunks + nchunks],
-                    )
+                    {"nanmask": nm, "delta": ps, "k_perp": kper, "k_par": kpar}
+                    for nm, ps, kper, kpar in zip(k_nanmask, PS, k_perp, k_par)
                 ]
             else:
                 data = {
-                    "delta": PS[skip_chunks : skip_chunks + nchunks],
-                    "k_perp": k_perp[skip_chunks : skip_chunks + nchunks],
-                    "k_par": k_par[skip_chunks : skip_chunks + nchunks],
+                    "nanmask": k_nanmask,
+                    "delta": PS,
+                    "k_perp": k_perp,
+                    "k_par": k_par,
                 }
 
         return data
@@ -897,16 +922,16 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
         """Reduce the data in the context to a list of models (one for each redshift chunk)."""
         lightcone = ctx.get("lightcone")
         observed_brightness_temp = ctx.get("observed_brightness_temp")
-        nanmask = ctx.get("uv_nanmask")
+        uv_nanmask = ctx.get("uv_nanmask")
         if self.kernel_size > 1:
             observed_brightness_temp = self.boxcar3D_smoothing(
                 observed_brightness_temp, (self.kernel_size,) * 3
             )
             # here follows a simple patch to match nanmask for a reduced dimension
-            d = nanmask.shape[0]
+            d = uv_nanmask.shape[0]
             do = observed_brightness_temp.shape[0]
-            nanmask = np.fft.ifftshift(
-                np.fft.fftshift(nanmask, axes=(0, 1))[
+            uv_nanmask = np.fft.ifftshift(
+                np.fft.fftshift(uv_nanmask, axes=(0, 1))[
                     d // 2
                     - d // self.kernel_size // 2 : d // 2
                     - d // self.kernel_size // 2
@@ -925,11 +950,13 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
             cell_size=lightcone.cell_size * self.kernel_size,
             dim=self.powerspectrum_dim,
             n_psbins=self.n_psbins,
+            min_k=self.min_k,
+            max_k=self.max_k,
             logk=self.logk,
             convert_to_delta=True,
             nchunks=self.nchunks,
             skip_chunks=self.skip_chunks,
-            nanmask=nanmask,
+            uv_nanmask=uv_nanmask,
             unwrap=False,
         )
 
@@ -984,6 +1011,7 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
                 for d in self.data
             ]
 
+    # TODO: implement splines
     def computeLikelihood(self, model):
         """Compute the likelihood given a model. Here, model uncertainty is ignored.
 
@@ -996,27 +1024,51 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
         data = self.data[0]
         if self.powerspectrum_dim == 1:
             # I'm assuming k is 2D: redshift + wavenumber
-            k = noise["k"]
-            k_nanmask = np.isnan(k)
-            k_mask = np.logical_and(k <= self.max_k, k >= self.min_k)
-            k_mask = np.logical_and(k_mask, ~k_nanmask)
+
+            k_nanmask = model["nanmask"]
+            if np.any(k_nanmask != noise["nanmask"]) or np.any(
+                k_nanmask != data["nanmask"]
+            ):
+                raise ValueError(
+                    "Something went wrong, model nanmask should be the same as noise/data nanmask."
+                )
+            # TODO: remove after implementing splines
+            if not np.all(np.isclose(model["k"], noise["k"])) or not np.all(
+                np.isclose(model["k"], data["k"])
+            ):
+                raise ValueError(
+                    "k bins are not the same. Check your data, noise and the rest of pipeline!"
+                )
         else:
             # I'm assuming k_par/k_perp is 2D: redshift + k_par/k_perp modes
-            k_par = noise["k_par"]
-            k_perp = noise["k_perp"]
-            k_par_nanmask = np.isnan(k_par)
-            k_perp_nanmask = np.isnan(k_perp)
-            k_par_mask = np.logical_and(k_par <= self.max_k, k_par >= self.min_k)
-            k_perp_mask = np.logical_and(k_perp <= self.max_k, k_perp >= self.min_k)
-            k_par_mask = np.logical_and(k_par_mask, ~k_par_nanmask)
-            k_perp_mask = np.logical_and(k_perp_mask, ~k_perp_nanmask)
-            k_mask = np.einsum("ki,kj->kij", k_perp_mask, k_par_mask).astype(bool)
+            k_nanmask = model["nanmask"]
+            if np.any(k_nanmask != noise["nanmask"]) or np.any(
+                k_nanmask != data["nanmask"]
+            ):
+                raise ValueError(
+                    "Something went wrong, model nanmask should be the same as noise/data nanmask."
+                )
 
-        x = data["delta"][k_mask]
-        mu = model["delta"][k_mask] + noise["delta"][k_mask]
+            # TODO: remove after implementing splines
+            if (
+                not np.all(np.isclose(model["k_par"], noise["k_par"]))
+                or not np.all(np.isclose(model["k_par"], data["k_par"]))
+                or not np.all(np.isclose(model["k_perp"], noise["k_perp"]))
+                or not np.all(np.isclose(model["k_perp"], data["k_perp"]))
+            ):
+                raise ValueError(
+                    "k bins are not the same. Check your data, noise and the rest of pipeline!"
+                )
+
+        x = data["delta"][k_nanmask]
+        mu = model["delta"][k_nanmask] + noise["delta"][k_nanmask]
 
         if self.full_covariance:
-            sigma_inv = noise["errs_inv"]
+            sigma = noise["errs"]
+            sigma = sigma[
+                np.einsum("i,j->ij", k_nanmask.flatten(), k_nanmask.flatten())
+            ].reshape(k_nanmask.sum(), k_nanmask.sum())
+            sigma_inv = pinvh(sigma)
             if len(sigma_inv) != len(x):
                 raise ValueError(
                     f"Something went wrong. Covariance is of size {sigma_inv.shape} "
@@ -1031,7 +1083,9 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
                 lnl = -0.5 * distance
 
         else:
-            sigma_inv = noise["errs_inv"]
+            sigma = noise["errs"]
+            sigma = sigma[k_nanmask.flatten()]
+            sigma_inv = 1 / sigma
             if len(sigma_inv) != len(x):
                 raise ValueError(
                     f"Something went wrong. Covariance is of size {len(sigma_inv)} "
