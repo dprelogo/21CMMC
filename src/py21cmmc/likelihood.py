@@ -697,6 +697,10 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
         Smoothing size, in number of voxels. If set, smooths the lightcone with
         `(smoothing_kernel_size) * 3` kernel before powerspectrum calculation.
         Defaults to 1, i.e. no smoothing.
+    skip_chunks : int, optional
+        Number of lightcone chunks for lower redshifts excluded from the calculation.
+        For exmple, for a list of `chunks`, only `chunks[skip_chunks:nchunks + skip_chunks]`
+        will be taken into account.
     horizon_wedge_excision : bool, optional
         Either to delete the modes below the wedge or not.
     full_covariance : bool, optional
@@ -716,6 +720,7 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
         *args,
         powerspectrum_dim=1,
         smoothing_kernel_size=1,
+        skip_chunks=0,
         horizon_wedge_excision=False,
         full_covariance=False,
         likelihood_sample_correction=True,
@@ -728,6 +733,9 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
         if smoothing_kernel_size < 1 or not isinstance(smoothing_kernel_size, int):
             raise ValueError("Smoothing size should be a positive integer.")
         self.kernel_size = smoothing_kernel_size
+        if skip_chunks < 0 or not isinstance(skip_chunks, int):
+            raise ValueError("Skip chunks should be a positive integer or 0.")
+        self.skip_chunks = skip_chunks
         if horizon_wedge_excision:
             raise NotImplementedError(
                 "At the moment horizon excision is not implemented."
@@ -774,6 +782,7 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
         logk=True,
         convert_to_delta=True,
         nchunks=10,
+        skip_chunks=0,
         nanmask=None,
         unwrap=True,
     ):
@@ -796,7 +805,12 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
             If `True`, returns non-dimensional power.
         nchunks : int
             Number of lightcone chunks. By default, lightcone is divided into
-            equally-sized cubes and only first `nchunks` are taken into account.
+            equally-sized cubes and only `nchunks` are taken into account.
+            See also `skip_chunks`.
+        skip_chunks : int
+            Number of lightcone chunks for lower redshifts excluded from the calculation.
+            For exmple, for a list of `chunks`, only `chunks[skip_chunks:nchunks + skip_chunks]`
+            will be taken into account.
         nanmask: array
             mask defining which parts of the lightcone (in u, v, z coordinates)
             are measured and which are not, i.e. NaNs. Ignored in the case of `None`.
@@ -818,17 +832,25 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
                 nanmask=nanmask,
             )
             ps_chunks = len(PS)
-            if ps_chunks < nchunks:
+            if ps_chunks < nchunks + skip_chunks:
                 logger.warning(
-                    f"`nchunks` ({nchunks}) larger than computed powers ({ps_chunks})."
+                    f"`nchunks + skip_chunks` ({nchunks + skip_chunks}) "
+                    f"larger than computed powers ({ps_chunks})."
                 )
-                nchunks = ps_chunks
+                nchunks = ps_chunks - skip_chunks
             if unwrap:
                 data = [
-                    {"delta": ps, "k": ks} for ps, ks in zip(PS[:nchunks], k[:nchunks])
+                    {"delta": ps, "k": ks}
+                    for ps, ks in zip(
+                        PS[skip_chunks : skip_chunks + nchunks],
+                        k[skip_chunks : skip_chunks + nchunks],
+                    )
                 ]
             else:
-                data = {"delta": PS[:nchunks], "k": k[:nchunks]}
+                data = {
+                    "delta": PS[skip_chunks : skip_chunks + nchunks],
+                    "k": k[skip_chunks : skip_chunks + nchunks],
+                }
         else:
             if len(n_psbins) != 2:
                 raise ValueError(
@@ -847,23 +869,26 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
                 nanmask=nanmask,
             )
             ps_chunks = len(PS)
-            if ps_chunks < nchunks:
+            if ps_chunks < nchunks + skip_chunks:
                 logger.warning(
-                    f"`nchunks` ({nchunks}) larger than computed powers ({ps_chunks})."
+                    f"`nchunks + skip_chunks` ({nchunks + skip_chunks}) "
+                    f"larger than computed powers ({ps_chunks})."
                 )
-                nchunks = ps_chunks
+                nchunks = ps_chunks - skip_chunks
             if unwrap:
                 data = [
                     {"delta": ps, "k_perp": kper, "k_par": kpar}
                     for ps, kper, kpar in zip(
-                        PS[:nchunks], k_perp[:nchunks], k_par[:nchunks]
+                        PS[skip_chunks : skip_chunks + nchunks],
+                        k_perp[skip_chunks : skip_chunks + nchunks],
+                        k_par[skip_chunks : skip_chunks + nchunks],
                     )
                 ]
             else:
                 data = {
-                    "delta": PS[:nchunks],
-                    "k_perp": k_perp[:nchunks],
-                    "k_par": k_par[:nchunks],
+                    "delta": PS[skip_chunks : skip_chunks + nchunks],
+                    "k_perp": k_perp[skip_chunks : skip_chunks + nchunks],
+                    "k_par": k_par[skip_chunks : skip_chunks + nchunks],
                 }
 
         return data
@@ -903,6 +928,7 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
             logk=self.logk,
             convert_to_delta=True,
             nchunks=self.nchunks,
+            skip_chunks=self.skip_chunks,
             nanmask=nanmask,
             unwrap=False,
         )
