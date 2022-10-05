@@ -1035,6 +1035,9 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
             if np.any(k_nanmask != noise["nanmask"]) or np.any(
                 k_nanmask != data["nanmask"]
             ):
+                np.save("model_nanmask.npy", model["nanmask"])
+                np.save("data_nanmask.npy", data["nanmask"])
+                np.save("noise_nanmask.npy", noise["nanmask"])
                 raise ValueError(
                     "Something went wrong, model nanmask should be the same as noise/data nanmask."
                 )
