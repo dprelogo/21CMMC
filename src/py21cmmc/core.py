@@ -1303,5 +1303,5 @@ class DummyCoreObservedLightCone(CoreLightConeModule):
 
     def build_model_data(self, ctx):
         """Compute all data defined by this core and add it to the context."""
-        ctx.add("observed_brightness_temp", np.zeros(self.uv_mask.shape))
+        ctx.add("observed_brightness_temp", np.random.normal(size=self.uv_mask.shape))
         ctx.add("uv_nanmask", self.uv_mask)
