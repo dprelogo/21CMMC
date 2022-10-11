@@ -1170,6 +1170,8 @@ class CoreObservedLightCone(CoreLightConeModule):
     sigma_filepath : str, optional
         Filepath from which and array of telescope noise amplitudes for each redshift will be loaded.
         If `None`, it is pre-computed.
+    write : bool, optional
+        Defines if the outputs in the main run should be cached.
     """
 
     # TODO: write pre-computation of uv box and sigma
@@ -1179,6 +1181,7 @@ class CoreObservedLightCone(CoreLightConeModule):
         add_telescope_effects=0,
         uv_filepath=None,
         sigma_filepath=None,
+        write=False,
         **kwargs,
     ):
         if uv_filepath is None or sigma_filepath is None:
@@ -1199,6 +1202,7 @@ class CoreObservedLightCone(CoreLightConeModule):
         self.uv = np.load(uv_filepath)  # gridded uv measurements
         self.uv_mask = self.uv > 1e-12  # contains all non-measured parts of uv grid
         self.sigma = np.load(sigma_filepath)  # noise amplitudes
+        self.write = write
 
     def build_model_data(self, ctx):
         """Compute all data defined by this core and add it to the context."""
@@ -1224,7 +1228,7 @@ class CoreObservedLightCone(CoreLightConeModule):
                 user_params=self.user_params,
                 regenerate=False,
                 random_seed=self.initial_conditions_seed,
-                write=False,
+                write=self.write,
                 direc=self.io_options["cache_dir"],
                 lightcone_quantities=lightcone_quantities,
                 global_quantities=lightcone_quantities,
@@ -1271,6 +1275,7 @@ class DummyCoreObservedLightCone(CoreLightConeModule):
         add_telescope_effects=0,
         uv_filepath=None,
         sigma_filepath=None,
+        write=False,
         **kwargs,
     ):
         if uv_filepath is None or sigma_filepath is None:
