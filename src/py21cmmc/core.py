@@ -12,6 +12,7 @@ import py21cmfast as p21
 import warnings
 from audioop import add
 from os import path
+from scipy.integrate import quadrature
 
 from . import _utils as ut
 
@@ -1170,6 +1171,8 @@ class CoreObservedLightCone(CoreLightConeModule):
     sigma_filepath : str, optional
         Filepath from which and array of telescope noise amplitudes for each redshift will be loaded.
         If `None`, it is pre-computed.
+    wedge_nanmask_filepath : str, optional
+        Filepath form which the wedge nanmask will be loaded. If `None`, it is pre-computed.
     write : bool, optional
         Defines if the outputs in the main run should be cached.
     """
@@ -1181,6 +1184,7 @@ class CoreObservedLightCone(CoreLightConeModule):
         add_telescope_effects=0,
         uv_filepath=None,
         sigma_filepath=None,
+        wedge_nanmask_filepath=None,
         write=False,
         **kwargs,
     ):
@@ -1202,7 +1206,64 @@ class CoreObservedLightCone(CoreLightConeModule):
         self.uv = np.load(uv_filepath)  # gridded uv measurements
         self.uv_mask = self.uv > 1e-12  # contains all non-measured parts of uv grid
         self.sigma = np.load(sigma_filepath)  # noise amplitudes
+        if wedge_nanmask_filepath is None:
+            self.wedge_nanmask = None
+        else:
+            self.wedge_nanmask = np.load(wedge_nanmask_filepath)
         self.write = write
+
+    @staticmethod
+    def compute_wedge_mask(
+        OMm,
+        redshifts,
+        HII_DIM,
+        cell_size,
+        buffer=0.04188790204786391,
+    ):
+        """Computing wedge mask for every HII_DIM chunks across redshift axis.
+
+        Parameters
+        ----------
+        OMm : float
+            Omega matter.
+        redshifts : array
+            List of redshifts in a lightcone.
+        HII_DIM : int
+            Size of the HII simulation box (see `21cmFASTv3`).
+        cell_size : float
+            Size of a cell in Mpc.
+        buffer : float
+            Buffer shift of the slope, in Mpc^-1.
+        """
+
+        def one_over_E(z, OMm):
+            return 1 / np.sqrt(OMm * (1.0 + z) ** 3 + (1 - OMm))
+
+        def multiplicative_factor(z, OMm):
+            return (
+                1
+                / one_over_E(z, OMm)
+                / (1 + z)
+                * quadrature(lambda x: one_over_E(x, OMm), 0, z)[0]
+            )
+
+        MF = np.array([multiplicative_factor(z, OMm) for z in redshifts]).astype(
+            np.float32
+        )
+        redshifts = redshifts.astype(np.float32)
+
+        k = 2 * np.pi * np.fft.fftfreq(HII_DIM, d=cell_size)
+        k_cube = np.meshgrid(k, k, k)
+        k_perp = np.sqrt(k_cube[0] ** 2 + k_cube[1] ** 2)
+        k_par = k_cube[2]
+
+        wedge_masks = []
+
+        for i in range(HII_DIM - 1, len(redshifts), HII_DIM):
+            W = k_par / (k_perp * MF[i] + buffer)
+            wedge_masks.append(np.logical_or(W < -1.0, W > 1.0))
+
+        return np.array(wedge_masks, dtype=bool)
 
     def build_model_data(self, ctx):
         """Compute all data defined by this core and add it to the context."""
@@ -1239,6 +1300,15 @@ class CoreObservedLightCone(CoreLightConeModule):
         observed_brightness_temp = self.observe_lightcone(lightcone.brightness_temp)
         ctx.add("observed_brightness_temp", observed_brightness_temp)
         ctx.add("uv_nanmask", self.uv_mask)
+
+        if self.wedge_nanmask is None:
+            self.wedge_nanmask = self.compute_wedge_mask(
+                lightcone.cosmo_params.OMm,
+                lightcone.lightcone_redshifts,
+                lightcone.user_params.HII_DIM,
+                lightcone.cell_size,
+            )
+        ctx.add("wedge_nanmask", self.wedge_nanmask)
 
     def observe_lightcone(self, brightness_temp):
         """Simulating telescope noise and taking UV grid into account."""
