@@ -737,10 +737,7 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
         if skip_chunks < 0 or not isinstance(skip_chunks, int):
             raise ValueError("Skip chunks should be a positive integer or 0.")
         self.skip_chunks = skip_chunks
-        if horizon_wedge_excision:
-            raise NotImplementedError(
-                "At the moment horizon excision is not implemented."
-            )
+        self.horizon_wedge_excision = horizon_wedge_excision
         self.full_covariance = full_covariance
         self.likelihood_sample_correction = likelihood_sample_correction
 
@@ -787,6 +784,7 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
         nchunks=10,
         skip_chunks=0,
         uv_nanmask=None,
+        wedge_nanmask=None,
         unwrap=True,
     ):
         """Computing 1D or 2D powerspectrum.
@@ -820,10 +818,14 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
             Number of lightcone chunks for lower redshifts excluded from the calculation.
             For exmple, for a list of `chunks`, only `chunks[skip_chunks:nchunks + skip_chunks]`
             will be taken into account.
-        uv_nanmask: array
-            mask defining which parts of the lightcone (in u, v, z coordinates)
+        uv_nanmask : array
+            Mask defining which parts of the lightcone (in u, v, z coordinates)
             are measured and which are not, i.e. NaNs. Ignored in the case of `None`.
             It should be of the same shape as the lightcone.
+        wedge_nanmask : array
+            Mask defining which parts of the lightcone (in u, v, eta coordinates)
+            are taken into account. There should be one wedge mask per lightcone chunk.
+            Ignored in the case of `None`.
         unwrap : bool, optional
             If `True` it returns a list of powerspectrums for each chunk.
             Otherwise, all powerspectrums are returned as one array.
@@ -838,7 +840,8 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
                 convert_to_delta=convert_to_delta,
                 chunk_skip=None,
                 compute_variance=False,
-                nanmask=uv_nanmask,
+                obs_nanmask=uv_nanmask,
+                wedge_nanmask=wedge_nanmask,
             )
             PS = np.array(PS, dtype=np.float32)
             k = np.array(k, dtype=np.float32)
@@ -884,7 +887,8 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
                 logk=logk,
                 convert_to_delta=convert_to_delta,
                 chunk_skip=None,
-                nanmask=uv_nanmask,
+                obs_nanmask=uv_nanmask,
+                wedge_nanmask=wedge_nanmask,
             )
             PS = np.array(PS, dtype=np.float32)
             k_perp = np.array(k_perp, dtype=np.float32)
@@ -927,11 +931,15 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
         lightcone = ctx.get("lightcone")
         observed_brightness_temp = ctx.get("observed_brightness_temp")
         uv_nanmask = ctx.get("uv_nanmask")
+        if self.horizon_wedge_excision:
+            wedge_nanmask = ctx.get("wedge_nanmask")
+        else:
+            wedge_nanmask = None
         if self.kernel_size > 1:
             observed_brightness_temp = self.boxcar3D_smoothing(
                 observed_brightness_temp, (self.kernel_size,) * 3
             )
-            # here follows a simple patch to match nanmask for a reduced dimension
+            # here follows a simple patch to match nanmasks for a reduced dimension
             d = uv_nanmask.shape[0]
             do = observed_brightness_temp.shape[0]
             uv_nanmask = np.fft.ifftshift(
@@ -948,6 +956,26 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
                 ],
                 axes=(0, 1),
             )
+            if wedge_nanmask is not None:
+                wedge_nanmask = np.fft.ifftshift(
+                    np.fft.fftshift(wedge_nanmask, axes=(1, 2, 3))[
+                        :,
+                        d // 2
+                        - d // self.kernel_size // 2 : d // 2
+                        - d // self.kernel_size // 2
+                        + do,
+                        d // 2
+                        - d // self.kernel_size // 2 : d // 2
+                        - d // self.kernel_size // 2
+                        + do,
+                        d // 2
+                        - d // self.kernel_size // 2 : d // 2
+                        - d // self.kernel_size // 2
+                        + do,
+                    ],
+                    axes=(1, 2, 3),
+                )
+
         return self.compute_power(
             lc=observed_brightness_temp,
             cell_size=lightcone.cell_size * self.kernel_size,
@@ -960,6 +988,7 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
             nchunks=self.nchunks,
             skip_chunks=self.skip_chunks,
             uv_nanmask=uv_nanmask,
+            wedge_nanmask=wedge_nanmask,
             unwrap=False,
         )
 
