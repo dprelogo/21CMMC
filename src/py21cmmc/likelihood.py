@@ -713,7 +713,7 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
         but just a sample from the distribution of actual covariance (variance).
     """
 
-    required_cores = (core.DummyCoreObservedLightCone,)
+    required_cores = (core.CoreObservedLightCone,)
 
     # TODO: Implement Horizon wedge excision
     def __init__(
@@ -929,7 +929,6 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
     def reduce_data(self, ctx):
         """Reduce the data in the context to a list of models (one for each redshift chunk)."""
         lightcone = ctx.get("lightcone")
-        lightcone = lightcone
         observed_brightness_temp = ctx.get("observed_brightness_temp")
         uv_nanmask = ctx.get("uv_nanmask")
         if self.horizon_wedge_excision:
@@ -979,7 +978,7 @@ class LikelihoodNDPowerObservedLightcone(Likelihood1DPowerLightcone):
 
         return self.compute_power(
             lc=observed_brightness_temp,
-            cell_size=1.5 * self.kernel_size,
+            cell_size=lightcone.cell_size * self.kernel_size,
             dim=self.powerspectrum_dim,
             n_psbins=self.n_psbins,
             min_k=self.min_k,
