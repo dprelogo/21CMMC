@@ -1345,6 +1345,7 @@ class DummyCoreObservedLightCone(CoreLightConeModule):
         add_telescope_effects=0,
         uv_filepath=None,
         sigma_filepath=None,
+        wedge_nanmask_filepath=None,
         write=False,
         **kwargs,
     ):
@@ -1364,6 +1365,10 @@ class DummyCoreObservedLightCone(CoreLightConeModule):
             )
         self.add_telescope_effects = add_telescope_effects
         self.uv = np.load(uv_filepath)  # gridded uv measurements
+        if wedge_nanmask_filepath is None:
+            raise ValueError("For dummy core provide the nanmask")
+        else:
+            self.wedge_nanmask = np.load(wedge_nanmask_filepath)
         self.uv_mask = self.uv > 1e-12  # contains all non-measured parts of uv grid
         self.sigma = np.load(sigma_filepath)  # noise amplitudes
 
@@ -1380,3 +1385,4 @@ class DummyCoreObservedLightCone(CoreLightConeModule):
         """Compute all data defined by this core and add it to the context."""
         ctx.add("observed_brightness_temp", np.random.normal(size=self.uv_mask.shape))
         ctx.add("uv_nanmask", self.uv_mask)
+        ctx.add("wedge_nanmask", self.wedge_nanmask)
